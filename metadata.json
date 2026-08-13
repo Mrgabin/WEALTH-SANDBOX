@@ -1,0 +1,6 @@
+{
+  "name": "Wealth Sandbox",
+  "description": "Simulateur d'empire financier et criminel interconnecté (Économie P2P, Minage Crypto, Bourse, Immobilier, Casino, Fiscalité)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
