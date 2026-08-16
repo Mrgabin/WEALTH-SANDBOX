@@ -1066,6 +1066,101 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           farm.rigs = farm.rigs.filter(r => !soldRigIds.includes(r.rig_id));
         }
       }
+
+      // --- NEW: Monthly Real Estate Appreciation & Listed Properties Auto-Sale ---
+      if (nextState.real_estate_agencies && nextState.real_estate_agencies.length > 0) {
+        const agency = nextState.real_estate_agencies[0];
+        const propertiesToKeep: any[] = [];
+
+        agency.managed_properties.forEach(prop => {
+          if (prop.owner_id === player.id) {
+            // 1. Months owned counter & Appreciation
+            prop.months_owned = (prop.months_owned || 0) + 1;
+            const upgLvl = (prop.upgrade_level || 1);
+            // 1% to 2% base monthly appreciation + small bonus if highly upgraded
+            const appreciationFactor = 1.01 + Math.random() * 0.01 + (upgLvl - 1) * 0.002;
+            prop.estimated_value = Math.round(prop.estimated_value * appreciationFactor);
+
+            // 2. Listing Sale Check
+            if (prop.listed_for_sale && prop.sale_price) {
+              const priceRatio = prop.sale_price / prop.estimated_value;
+              let sellChance = 0.01;
+              if (priceRatio <= 0.6) sellChance = 0.40;
+              else if (priceRatio <= 0.8) sellChance = 0.25;
+              else if (priceRatio <= 1.0) sellChance = 0.12;
+              else if (priceRatio <= 1.2) sellChance = 0.06;
+              else if (priceRatio <= 1.5) sellChance = 0.02;
+
+              if (Math.random() < sellChance) {
+                // SOLD!
+                player.bank_clean += prop.sale_price;
+
+                // Move active mining farm back to personal garage if this property was used
+                const playerFarm = nextState.mining_farms[player.id];
+                if (playerFarm && playerFarm.location_id === prop.property_id) {
+                  playerFarm.location_id = 'default_garage';
+                  playerFarm.location_name = 'Garage Personnel';
+                  playerFarm.power_capacity_watts = 15000;
+                  playerFarm.cooling_type = 'AIR';
+                }
+
+                newLogs.push({
+                  id: `log_prop_sold_${Date.now()}_${prop.property_id}`,
+                  timestamp: nowStr,
+                  type: 'DB_WRITE',
+                  uid: player.id,
+                  message: `📦 TRANSACTION IMMOBILIÈRE : Votre propriété '${prop.name}' a été vendue sur le marché d'occasion pour ${prop.sale_price.toLocaleString()}$ propres !`,
+                  status: 'OK'
+                });
+                return; // Exclude from propertiesToKeep
+              }
+            }
+          }
+          propertiesToKeep.push(prop);
+        });
+
+        agency.managed_properties = propertiesToKeep;
+      }
+
+      // --- NEW: Monthly Small Shops Appreciation & Listed Shops Auto-Sale ---
+      if (player.shop_properties && player.shop_properties.length > 0) {
+        const shopsToKeep: any[] = [];
+
+        player.shop_properties.forEach(shop => {
+          shop.months_owned = (shop.months_owned || 0) + 1;
+          shop.estimated_value = shop.estimated_value || shop.buy_cost;
+          const upgLvl = (shop.upgrade_level || 1);
+          const appreciationFactor = 1.01 + Math.random() * 0.01 + (upgLvl - 1) * 0.002;
+          shop.estimated_value = Math.round(shop.estimated_value * appreciationFactor);
+
+          if (shop.listed_for_sale && shop.sale_price) {
+            const priceRatio = shop.sale_price / shop.estimated_value;
+            let sellChance = 0.01;
+            if (priceRatio <= 0.6) sellChance = 0.40;
+            else if (priceRatio <= 0.8) sellChance = 0.25;
+            else if (priceRatio <= 1.0) sellChance = 0.12;
+            else if (priceRatio <= 1.2) sellChance = 0.06;
+            else if (priceRatio <= 1.5) sellChance = 0.02;
+
+            if (Math.random() < sellChance) {
+              player.bank_clean += shop.sale_price;
+
+              newLogs.push({
+                id: `log_shop_sold_${Date.now()}_${shop.id}`,
+                timestamp: nowStr,
+                type: 'DB_WRITE',
+                uid: player.id,
+                message: `📦 COMMERCE CÉDÉ : Votre boutique '${shop.name}' à ${shop.city} a été rachetée sur le marché secondaire pour ${shop.sale_price.toLocaleString()}$ propres !`,
+                status: 'OK'
+              });
+              return; // Exclude from shopsToKeep
+            }
+          }
+          shopsToKeep.push(shop);
+        });
+
+        player.shop_properties = shopsToKeep;
+      }
     });
 
     newLogs.push({
@@ -1074,6 +1169,166 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
       type: 'TICK',
       message: `CYCLE MENSUEL COMPLETÉ : Rentrées locatives, taxes d'exploitation et ISF prélevés.`,
       status: 'OK'
+    });
+  }
+
+  // --- NEW: Spontaneous Buyout Offers Generation & Ticker Expirations ---
+  // A. Offer Expirations check (Runs on every single tick)
+  Object.keys(nextState.players).forEach(pid => {
+    const player = nextState.players[pid];
+    
+    // Check Real Estate Buyout offers expiration
+    if (nextState.real_estate_agencies && nextState.real_estate_agencies.length > 0) {
+      nextState.real_estate_agencies[0].managed_properties.forEach(prop => {
+        if (prop.owner_id === player.id && prop.buyout_offer) {
+          if (nextState.tick_count >= prop.buyout_offer.expires_tick) {
+            newLogs.push({
+              id: `log_prop_bo_expired_${Date.now()}_${prop.property_id}`,
+              timestamp: nowStr,
+              type: 'TICK',
+              uid: player.id,
+              message: `⏳ OFFRE EXPIRÉE : L'offre d'achat de ${prop.buyout_offer.offer_price.toLocaleString()}$ sur '${prop.name}' a expiré.`,
+              status: 'INFO'
+            });
+            prop.buyout_offer = null;
+          }
+        }
+      });
+    }
+
+    // Check Shops Buyout offers expiration
+    if (player.shop_properties) {
+      player.shop_properties.forEach(shop => {
+        if (shop.buyout_offer) {
+          if (nextState.tick_count >= shop.buyout_offer.expires_tick) {
+            newLogs.push({
+              id: `log_shop_bo_expired_${Date.now()}_${shop.id}`,
+              timestamp: nowStr,
+              type: 'TICK',
+              uid: player.id,
+              message: `⏳ OFFRE EXPIRÉE : L'offre d'achat de ${shop.buyout_offer.offer_price.toLocaleString()}$ sur votre commerce '${shop.name}' a expiré.`,
+              status: 'INFO'
+            });
+            shop.buyout_offer = null;
+          }
+        }
+      });
+    }
+
+    // Check Rigs Buyout offers expiration
+    const playerFarm = nextState.mining_farms[player.id];
+    if (playerFarm && playerFarm.rigs) {
+      playerFarm.rigs.forEach(rig => {
+        if (rig.buyout_offer) {
+          if (nextState.tick_count >= rig.buyout_offer.expires_tick) {
+            newLogs.push({
+              id: `log_rig_bo_expired_${Date.now()}_${rig.rig_id}`,
+              timestamp: nowStr,
+              type: 'TICK',
+              uid: player.id,
+              message: `⏳ OFFRE EXPIRÉE : L'offre d'achat de ${rig.buyout_offer.offer_price.toLocaleString()}$ sur votre matériel '${rig.name}' a expiré.`,
+              status: 'INFO'
+            });
+            rig.buyout_offer = null;
+          }
+        }
+      });
+    }
+  });
+
+  // B. Generates spontaneous buyout offers every 15 ticks with 20% chance per player
+  if (nextState.tick_count % 15 === 0) {
+    Object.keys(nextState.players).forEach(pid => {
+      const player = nextState.players[pid];
+      if (Math.random() < 0.20) {
+        // Collect all assets
+        const ownedProperties = nextState.real_estate_agencies && nextState.real_estate_agencies.length > 0
+          ? nextState.real_estate_agencies[0].managed_properties.filter(p => p.owner_id === player.id)
+          : [];
+        const ownedShops = player.shop_properties || [];
+        const playerFarm = nextState.mining_farms[player.id];
+        const ownedRigs = playerFarm ? (playerFarm.rigs || []) : [];
+
+        const totalAssets = ownedProperties.length + ownedShops.length + ownedRigs.length;
+        if (totalAssets > 0) {
+          const randIdx = Math.floor(Math.random() * totalAssets);
+          if (randIdx < ownedProperties.length) {
+            // Generate for a Real Estate Property
+            const prop = ownedProperties[randIdx];
+            if (!prop.buyout_offer) {
+              const age = prop.months_owned || 0;
+              const upg = prop.upgrade_level || 1;
+              const multiplier = 1.15 + Math.random() * 0.25; // 15% to 40% premium
+              const ageBonus = 1 + age * 0.005;
+              const upgBonus = 1 + (upg - 1) * 0.08;
+              const offerPrice = Math.round(prop.estimated_value * multiplier * ageBonus * upgBonus);
+
+              prop.buyout_offer = {
+                offer_price: offerPrice,
+                expires_tick: nextState.tick_count + 60
+              };
+
+              newLogs.push({
+                id: `log_prop_bo_new_${Date.now()}_${prop.property_id}`,
+                timestamp: nowStr,
+                type: 'TICK',
+                uid: player.id,
+                message: `📥 OFFRE REÇUE : Un investisseur immobilier vous propose d'acquérir '${prop.name}' pour ${offerPrice.toLocaleString()}$ ! Réponse requise sous 3 min.`,
+                status: 'WARN'
+              });
+            }
+          } else if (randIdx < ownedProperties.length + ownedShops.length) {
+            // Generate for a Shop Property
+            const shop = ownedShops[randIdx - ownedProperties.length];
+            if (!shop.buyout_offer) {
+              const age = shop.months_owned || 0;
+              const upg = shop.upgrade_level || 1;
+              const multiplier = 1.20 + Math.random() * 0.30; // 20% to 50% premium
+              const ageBonus = 1 + age * 0.005;
+              const upgBonus = 1 + (upg - 1) * 0.08;
+              const baseVal = shop.estimated_value || shop.buy_cost;
+              const offerPrice = Math.round(baseVal * multiplier * ageBonus * upgBonus);
+
+              shop.buyout_offer = {
+                offer_price: offerPrice,
+                expires_tick: nextState.tick_count + 60
+              };
+
+              newLogs.push({
+                id: `log_shop_bo_new_${Date.now()}_${shop.id}`,
+                timestamp: nowStr,
+                type: 'TICK',
+                uid: player.id,
+                message: `📥 OFFRE REÇUE : Un groupement commercial propose de racheter votre fonds '${shop.name}' à ${shop.city} pour ${offerPrice.toLocaleString()}$ !`,
+                status: 'WARN'
+              });
+            }
+          } else {
+            // Generate for a Mining Rig
+            const rig = ownedRigs[randIdx - ownedProperties.length - ownedShops.length];
+            if (!rig.buyout_offer) {
+              const basePrice = rig.hashrate_th > 1000 ? rig.hashrate_th * 3 : rig.hashrate_th * 7;
+              const wear = rig.wear_condition ?? 1.0;
+              const estVal = Math.max(50, basePrice * wear * 0.8);
+              const offerPrice = Math.round(estVal * (1.10 + Math.random() * 0.25));
+
+              rig.buyout_offer = {
+                offer_price: offerPrice,
+                expires_tick: nextState.tick_count + 60
+              };
+
+              newLogs.push({
+                id: `log_rig_bo_new_${Date.now()}_${rig.rig_id}`,
+                timestamp: nowStr,
+                type: 'TICK',
+                uid: player.id,
+                message: `📥 OFFRE REÇUE : Un mineur indépendant propose de racheter votre matériel d'occasion '${rig.name}' pour ${offerPrice.toLocaleString()}$ !`,
+                status: 'WARN'
+              });
+            }
+          }
+        }
+      }
     });
   }
 

@@ -34,6 +34,12 @@ export interface ShopProperty {
   com_campaign: 'NONE' | 'FLYERS' | 'SOCIAL_MEDIA' | 'TV';
   last_tick_revenue?: number;
   last_tick_profit?: number;
+  upgrade_level?: number;
+  months_owned?: number;
+  estimated_value?: number;
+  listed_for_sale?: boolean;
+  sale_price?: number;
+  buyout_offer?: { offer_price: number; expires_tick: number; } | null;
 }
 
 export interface PlayerProfile {
@@ -91,6 +97,11 @@ export interface ManagedProperty {
   rent_monthly: number;
   estimated_value: number;
   power_capacity_kw: number;
+  upgrade_level?: number;
+  months_owned?: number;
+  listed_for_sale?: boolean;
+  sale_price?: number;
+  buyout_offer?: { offer_price: number; expires_tick: number; } | null;
 }
 
 export interface RealEstateAgency {
@@ -119,6 +130,7 @@ export interface MiningRig {
   required_spare_part_code?: string; // e.g. "VRAM_RTX_4090" or "PROC_RTX_4090"
   listed_for_sale?: boolean; // GPU is packed and listed for sale on resale market
   sale_price?: number; // Listed resale price
+  buyout_offer?: { offer_price: number; expires_tick: number; } | null;
 }
 
 export interface MiningFarm {
