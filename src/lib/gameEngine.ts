@@ -363,7 +363,13 @@ export function loadSavedState(): FullGlobalState {
 
 export function saveGlobalState(state: FullGlobalState) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+    const isAuth = localStorage.getItem('wealth_sandbox_is_authenticated') === 'true';
+    if (isAuth) {
+      // Wipes browser state cache to avoid conflict with online Firestore database
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } else {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+    }
   } catch (e) {
     console.error("Error saving state:", e);
   }
@@ -405,6 +411,7 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
       let totalHashrate = 0;
 
       farm.rigs.forEach(rig => {
+        if (rig.shelved) return; // Skip shelved/set-aside hardware
         if (rig.wear_condition > 0.05) {
           const ocMult = rig.overclocked ? 1.25 : 1.0;
           const coolingBoost = (farm.cooling_type === 'LIQUID' && rig.hashrate_th > 0) ? 1.08 : 1.0;
@@ -417,14 +424,18 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
         }
       });
 
+      const baseRate = player.active_subscriptions?.includes('green_electricity') 
+        ? nextState.server_config.electricity_kwh_rate * 0.75 
+        : nextState.server_config.electricity_kwh_rate;
       const dailyKWh = (totalWatts / 1000) * 24;
       const electricityCost = player.electricity_meter_hacked 
         ? 0 
-        : dailyKWh * nextState.server_config.electricity_kwh_rate;
+        : dailyKWh * baseRate;
 
-      // Hacked meter risk check
+      // Hacked meter risk check (VPN premium reduces risk from 3% to 0.5%)
       if (player.electricity_meter_hacked) {
-        if (Math.random() < 0.03) { // 3% chance per tick
+        const auditRisk = player.active_subscriptions?.includes('vpn_premium') ? 0.005 : 0.03;
+        if (Math.random() < auditRisk) {
           const fine = 25000;
           player.bank_clean = Math.max(0, player.bank_clean - fine);
           newLogs.push({
@@ -432,7 +443,7 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
             timestamp: nowStr,
             type: 'MINING',
             uid: player.id,
-            message: `AUDIT SERVEUR: Piratage de compteur détecté chez ${player.name}! Amende infligée: ${fine.toLocaleString()}$`,
+            message: `AUDIT SERVEUR: Piratage de compteur détecté chez ${player.name}! ${player.active_subscriptions?.includes('vpn_premium') ? '(Le VPN a limité les dégâts)' : ''} Amende infligée: ${fine.toLocaleString()}`,
             status: 'ALERT'
           });
         }
@@ -454,6 +465,115 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           status: 'OK'
         });
       }
+    }
+
+    // --- Small Shops (Boutiques de France) Real-Time Processing ---
+    if (player.shop_properties && player.shop_properties.length > 0) {
+      player.shop_properties.forEach(shop => {
+        // Base constants based on shop type
+        let stdSupplyCost = 4;
+        let stdSellPrice = 12;
+        if (shop.type === 'BOULANGERIE') { stdSupplyCost = 2; stdSellPrice = 7; }
+        else if (shop.type === 'BISTRO') { stdSupplyCost = 5; stdSellPrice = 18; }
+        else if (shop.type === 'BOUTIQUE_MODE') { stdSupplyCost = 15; stdSellPrice = 45; }
+        else if (shop.type === 'HIGH_TECH') { stdSupplyCost = 80; stdSellPrice = 220; }
+        else if (shop.type === 'BIJOUTERIE') { stdSupplyCost = 400; stdSellPrice = 1200; }
+
+        // Quality adjustments
+        let qualityCostMult = 1.0;
+        let qualitySellMult = 1.0;
+        if (shop.selected_supply_type === 'LOW_COST') {
+          qualityCostMult = 0.6;
+          qualitySellMult = 0.7;
+        } else if (shop.selected_supply_type === 'PREMIUM') {
+          qualityCostMult = 1.6;
+          qualitySellMult = 1.8;
+        }
+
+        // City Multipliers (both for buy cost and sell price / demand!)
+        let cityRevenueMult = 1.0;
+        const lowerCity = shop.city.toLowerCase();
+        if (lowerCity.includes('paris')) cityRevenueMult = 4.5;
+        else if (lowerCity.includes('lyon')) cityRevenueMult = 2.3;
+        else if (lowerCity.includes('marseille')) cityRevenueMult = 1.7;
+        else if (lowerCity.includes('bordeaux')) cityRevenueMult = 1.9;
+        else if (lowerCity.includes('nice')) cityRevenueMult = 2.1;
+        else if (lowerCity.includes('chamonix')) cityRevenueMult = 1.3;
+        else if (lowerCity.includes('mende')) cityRevenueMult = 0.6;
+        else if (lowerCity.includes('guéret')) cityRevenueMult = 0.5;
+
+        // Marketing Campaign Multipliers and ticking Costs
+        let marketingDemandMult = 1.0;
+        let marketingCostTick = 0;
+        if (shop.com_campaign === 'FLYERS') {
+          marketingDemandMult = 1.25;
+          marketingCostTick = 5;
+        } else if (shop.com_campaign === 'SOCIAL_MEDIA') {
+          marketingDemandMult = 1.6;
+          marketingCostTick = 20;
+        } else if (shop.com_campaign === 'TV') {
+          marketingDemandMult = 2.5;
+          marketingCostTick = 80;
+        }
+
+        // Pricing Multiplier Demand Adjustment
+        // High multipliers crash demand; low multipliers surge it
+        let pricingDemandMult = 1.0;
+        if (shop.sell_price_multiplier > 1.0) {
+          pricingDemandMult = Math.max(0.05, 2.0 - shop.sell_price_multiplier);
+        } else if (shop.sell_price_multiplier < 1.0) {
+          pricingDemandMult = 1.0 + (1.0 - shop.sell_price_multiplier) * 1.5;
+        }
+
+        // Overall Demand calculation
+        const overallDemandFactor = marketingDemandMult * pricingDemandMult * (0.8 + Math.random() * 0.4);
+
+        // Max units that can be sold per tick (proportional to shop scale/type)
+        let maxTickSales = 3;
+        if (shop.type === 'BOULANGERIE') maxTickSales = 6;
+        else if (shop.type === 'BIJOUTERIE') maxTickSales = 1;
+
+        let unitsSold = 0;
+        let tickRevenue = 0;
+        let tickCost = marketingCostTick;
+        let netProfit = 0;
+
+        if (shop.current_stock > 0) {
+          const rawSales = Math.round(maxTickSales * overallDemandFactor);
+          unitsSold = Math.min(shop.current_stock, Math.max(0, rawSales));
+
+          if (unitsSold > 0) {
+            const sellPricePerUnit = stdSellPrice * shop.sell_price_multiplier * cityRevenueMult * qualitySellMult;
+            const supplyCostPerUnit = stdSupplyCost * cityRevenueMult * qualityCostMult;
+
+            tickRevenue = unitsSold * sellPricePerUnit;
+            tickCost += unitsSold * supplyCostPerUnit;
+            
+            // Deduct sold stock
+            shop.current_stock -= unitsSold;
+          }
+        }
+
+        netProfit = tickRevenue - tickCost;
+        player.bank_clean = Math.max(0, player.bank_clean + netProfit);
+
+        shop.last_tick_revenue = Number(tickRevenue.toFixed(2));
+        shop.last_tick_profit = Number(netProfit.toFixed(2));
+
+        // Unlock Multi-Propriétaire Achievement if player owns 3+ shops
+        if (player.shop_properties.length >= 3 && !player.achievements?.includes('ach_real_estate_king')) {
+          if (!player.achievements) player.achievements = [];
+          player.achievements.push('ach_real_estate_king');
+          newLogs.push({
+            id: `log_ach_sh_king_${Date.now()}`,
+            timestamp: nowStr,
+            type: 'DB_WRITE',
+            uid: player.id,
+            message: `🏆 SUCCÈS DÉVERROUILLÉ: 'Multi-Propriétaire' pour ${player.name} ! (Achat de 3+ boutiques)`,
+            status: 'OK'
+          });
+        }
+      });
     }
 
     // --- Trading Position Real-Time Processing ---
@@ -502,26 +622,34 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
         let closePrice = currentPrice;
 
         if (pos.stop_loss !== undefined) {
-          if (pos.is_long && currentPrice <= pos.stop_loss) {
-            shouldClose = true;
-            closeReason = 'STOP LOSS ATTEINT';
-            closePrice = pos.stop_loss;
-          } else if (!pos.is_long && currentPrice >= pos.stop_loss) {
-            shouldClose = true;
-            closeReason = 'STOP LOSS ATTEINT';
-            closePrice = pos.stop_loss;
+          // Verify valid SL boundary to prevent instant-trigger exploits
+          const isValidSL = pos.is_long ? (pos.stop_loss < pos.entry_price) : (pos.stop_loss > pos.entry_price);
+          if (isValidSL) {
+            if (pos.is_long && currentPrice <= pos.stop_loss) {
+              shouldClose = true;
+              closeReason = 'STOP LOSS ATTEINT';
+              closePrice = currentPrice;
+            } else if (!pos.is_long && currentPrice >= pos.stop_loss) {
+              shouldClose = true;
+              closeReason = 'STOP LOSS ATTEINT';
+              closePrice = currentPrice;
+            }
           }
         }
 
         if (!shouldClose && pos.take_profit !== undefined) {
-          if (pos.is_long && currentPrice >= pos.take_profit) {
-            shouldClose = true;
-            closeReason = 'TAKE PROFIT ATTEINT';
-            closePrice = pos.take_profit;
-          } else if (!pos.is_long && currentPrice <= pos.take_profit) {
-            shouldClose = true;
-            closeReason = 'TAKE PROFIT ATTEINT';
-            closePrice = pos.take_profit;
+          // Verify valid TP boundary to prevent instant-trigger exploits
+          const isValidTP = pos.is_long ? (pos.take_profit > pos.entry_price) : (pos.take_profit < pos.entry_price);
+          if (isValidTP) {
+            if (pos.is_long && currentPrice >= pos.take_profit) {
+              shouldClose = true;
+              closeReason = 'TAKE PROFIT ATTEINT';
+              closePrice = currentPrice;
+            } else if (!pos.is_long && currentPrice <= pos.take_profit) {
+              shouldClose = true;
+              closeReason = 'TAKE PROFIT ATTEINT';
+              closePrice = currentPrice;
+            }
           }
         }
 
@@ -691,13 +819,53 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           timestamp: nowStr,
           type: 'TAX_ISF',
           uid: player.id,
-          message: `FISCALITÉ BOUTIQUE : Taxes mensuelles payées par ${player.name} pour '${shop.name}': -$${taxes.toLocaleString()}`,
+          message: `FISCALITÉ BOUTIQUE : Taxes mensuelles payées par ${player.name} pour '${shop.name}': -${taxes.toLocaleString()}`,
           status: 'WARN'
         });
       });
 
+      // Monthly Subscriptions Deductions
+      if (!player.active_subscriptions) {
+        player.active_subscriptions = [];
+      }
+      
+      const subscriptionsPool = [
+        { id: 'vpn_premium', name: 'VPN CyberShield', cost: 100 },
+        { id: 'garde_du_corps', name: 'Garde du Corps Privé', cost: 500 },
+        { id: 'green_electricity', name: 'Tarif Électricité Vert', cost: 250 }
+      ];
+      
+      player.active_subscriptions.forEach(subId => {
+        const sub = subscriptionsPool.find(s => s.id === subId);
+        if (sub) {
+          if (player.bank_clean >= sub.cost) {
+            player.bank_clean -= sub.cost;
+            newLogs.push({
+              id: `log_sub_${Date.now()}_${sub.id}`,
+              timestamp: nowStr,
+              type: 'TAX_ISF',
+              uid: player.id,
+              message: `ABONNEMENT : Prélèvement mensuel pour '${sub.name}': -${sub.cost.toLocaleString()}`,
+              status: 'INFO'
+            });
+          } else {
+            // Cancel subscription due to lack of funds
+            player.active_subscriptions = player.active_subscriptions!.filter(id => id !== subId);
+            newLogs.push({
+              id: `log_sub_cancel_${Date.now()}_${sub.id}`,
+              timestamp: nowStr,
+              type: 'TAX_ISF',
+              uid: player.id,
+              message: `ABONNEMENT SUSPENDU : Défaut de paiement pour '${sub.name}'. Solde propre insuffisant (${sub.cost} requis)`,
+              status: 'WARN'
+            });
+          }
+        }
+      });
+
       // Street Robbery Random check (5% chance if holding more than $10,000 cash dirty)
-      if (player.cash_dirty > 10000 && Math.random() < 0.05) {
+      const hasBodyguard = player.active_subscriptions?.includes('garde_du_corps');
+      if (player.cash_dirty > 10000 && Math.random() < 0.05 && !hasBodyguard) {
         const stolenPercent = 0.15 + Math.random() * 0.15;
         const lossAmount = Math.floor(player.cash_dirty * stolenPercent);
         player.cash_dirty -= lossAmount;
@@ -707,7 +875,7 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           timestamp: nowStr,
           type: 'TAX_ISF',
           uid: player.id,
-          message: `SÉCURITÉ URBAINE : ${player.name} s'est fait détrousser dans la rue. Perte de -$${lossAmount.toLocaleString()} de cash sale !`,
+          message: `SÉCURITÉ URBAINE : ${player.name} s'est fait détrousser dans la rue. Perte de -${lossAmount.toLocaleString()} de cash sale !`,
           status: 'ALERT'
         });
 
@@ -718,7 +886,7 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
             description: "En marchant dans une zone non sécurisée avec une forte somme de liquide sur vous, vous avez été pris pour cible par des délinquants armés.",
             type: 'TAX_AUDIT',
             severity: 'CRITICAL',
-            impactText: `Ils ont fouillé vos poches et volé -$${lossAmount.toLocaleString()} de votre Cash Sale.`
+            impactText: `Ils ont fouillé vos poches et volé -${lossAmount.toLocaleString()} de votre Cash Sale.`
           };
         }
       }
@@ -743,67 +911,82 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
 
   // 4. Random Server-side Events (2% chance per tick)
   // Only trigger if no active event is currently shown to avoid event stacking
-  if (!nextState.active_event && Math.random() < 0.02) {
-    const eventPool = [
-      {
-        id: `ev_tax_${Date.now()}`,
-        title: "ALERTE : INSPECTION ENEDIS/OMNIGRID",
-        description: "Une équipe technique d'enquêteurs circule actuellement pour vérifier les raccordements frauduleux et les compteurs pontés.",
-        type: "TAX_AUDIT" as any,
-        severity: "CRITICAL" as any,
-        impactText: "Les joueurs piratant l'électricité ont 35% de risques d'être repérés et verbalisés à hauteur de $35,000 lors des prochains cycles."
-      },
-      {
-        id: `ev_donation_${Date.now()}`,
-        title: "DONATION ANONYME EXCEPTIONNELLE !",
-        description: "Un donateur anonyme, fervent défenseur de la finance décentralisée, distribue des subventions de soutien aux pionniers du réseau.",
-        type: "WINDFALL" as any,
-        severity: "SUCCESS" as any,
-        impactText: "Votre compte bancaire propre vient d'être crédité de +$50,000 sans aucune contrepartie."
-      },
-      {
-        id: `ev_crash_${Date.now()}`,
-        title: "PANIQUE SUR LES MARCHÉS CRYPTO !",
-        description: "Des rumeurs de régulation drastique des banques centrales provoquent une panique et de fortes ventes sur le Bitcoin.",
-        type: "MARKET_CRASH" as any,
-        severity: "WARNING" as any,
-        impactText: "La valeur du Bitcoin subit un ajustement temporaire. Soyez vigilants sur vos marges d'investissement !"
-      },
-      {
-        id: `ev_gift_${Date.now()}`,
-        title: "SUBVENTION ÉCOLOGIQUE DE L'ÉTAT",
-        description: "La métropole d'Omni-City attribue une prime spéciale d'incitation écologique pour l'adoption d'équipements informatiques labellisés verts.",
-        type: "WINDFALL" as any,
-        severity: "SUCCESS" as any,
-        impactText: "Félicitations! Vous recevez une subvention de +$15,000 sur votre compte bancaire propre pour récompenser vos efforts d'efficience énergétique."
-      }
-    ];
+  if (!nextState.active_event) {
+    const isRareDonation = Math.random() < 0.0005; // 0.05% chance per tick (approx once per 2000 cycles)
+    const isStandardEvent = Math.random() < 0.02;
 
-    const chosen = eventPool[Math.floor(Math.random() * eventPool.length)];
-    nextState.active_event = chosen;
-
-    const activePlayer = nextState.players[nextState.current_player_id];
-    if (activePlayer) {
-      if (chosen.title.includes("DONATION")) {
+    if (isRareDonation) {
+      const activePlayer = nextState.players[nextState.current_player_id];
+      if (activePlayer) {
+        nextState.active_event = {
+          id: `ev_donation_${Date.now()}`,
+          title: "🎁 DONATION ANONYME EXCEPTIONNELLE !",
+          description: "Un mécène anonyme, grand partisan du Web3, vient de vous envoyer une enveloppe de soutien financier après avoir analysé votre rig.",
+          type: "WINDFALL" as any,
+          severity: "SUCCESS" as any,
+          impactText: "Votre compte bancaire propre vient d'être crédité de +$50,000 !"
+        };
         activePlayer.bank_clean += 50000;
+        
+        // Unlock achievement
+        if (!activePlayer.achievements) activePlayer.achievements = [];
+        if (!activePlayer.achievements.includes('ach_donation_small')) {
+          activePlayer.achievements.push('ach_donation_small');
+        }
+
         newLogs.push({
           id: `log_ev_don_${Date.now()}`,
           timestamp: nowStr,
           type: 'DB_WRITE',
           uid: activePlayer.id,
-          message: `ÉVÉNEMENT: Donation anonyme de $50,000 créditée sur le compte de ${activePlayer.name}`,
+          message: `ÉVÉNEMENT TRÈS RARE: Donation anonyme de $50,000 créditée chez ${activePlayer.name}. Succès Déverrouillé !`,
           status: 'OK'
         });
-      } else if (chosen.title.includes("SUBVENTION")) {
-        activePlayer.bank_clean += 15000;
-        newLogs.push({
-          id: `log_ev_sub_${Date.now()}`,
-          timestamp: nowStr,
-          type: 'DB_WRITE',
-          uid: activePlayer.id,
-          message: `ÉVÉNEMENT: Subvention écologique de $15,000 créditée sur le compte de ${activePlayer.name}`,
-          status: 'OK'
-        });
+      }
+    } else if (isStandardEvent) {
+      const eventPool = [
+        {
+          id: `ev_tax_${Date.now()}`,
+          title: "ALERTE : INSPECTION ENEDIS/OMNIGRID",
+          description: "Une équipe technique d'enquêteurs circule actuellement pour vérifier les raccordements frauduleux et les compteurs pontés.",
+          type: "TAX_AUDIT" as any,
+          severity: "CRITICAL" as any,
+          impactText: "Les joueurs piratant l'électricité ont 35% de risques d'être repérés et verbalisés à hauteur de $35,000 lors des prochains cycles."
+        },
+        {
+          id: `ev_crash_${Date.now()}`,
+          title: "PANIQUE SUR LES MARCHÉS CRYPTO !",
+          description: "Des rumeurs de régulation drastique des banques centrales provoquent une panique et de fortes ventes sur le Bitcoin.",
+          type: "MARKET_CRASH" as any,
+          severity: "WARNING" as any,
+          impactText: "La valeur du Bitcoin subit un ajustement temporaire. Soyez vigilants sur vos marges d'investissement !"
+        },
+        {
+          id: `ev_gift_${Date.now()}`,
+          title: "SUBVENTION ÉCOLOGIQUE DE L'ÉTAT",
+          description: "La métropole d'Omni-City attribue une prime spéciale d'incitation écologique pour l'adoption d'équipements informatiques labellisés verts.",
+          type: "WINDFALL" as any,
+          severity: "SUCCESS" as any,
+          impactText: "Félicitations! Vous recevez une subvention de +$15,000 sur votre compte bancaire propre pour récompenser vos efforts d'efficience énergétique."
+        }
+      ];
+
+      const chosen = eventPool[Math.floor(Math.random() * eventPool.length)];
+      nextState.active_event = chosen;
+
+      const activePlayer = nextState.players[nextState.current_player_id];
+      if (activePlayer) {
+        if (chosen.title.includes("SUBVENTION")) {
+          activePlayer.bank_clean += 15000;
+          newLogs.push({
+            id: `log_ev_sub_${Date.now()}`,
+            timestamp: nowStr,
+            type: 'DB_WRITE',
+            uid: activePlayer.id,
+            message: `ÉVÉNEMENT: Subvention écologique de $15,000 créditée sur le compte de ${activePlayer.name}`,
+            status: 'OK'
+          });
+        }
       }
     }
   }

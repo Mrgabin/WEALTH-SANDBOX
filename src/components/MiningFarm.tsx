@@ -18,6 +18,144 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
   const [ocError, setOcError] = useState<string | null>(null);
   const [ocSuccess, setOcSuccess] = useState<string | null>(null);
 
+  // Cooling assignment state
+  const [selectedRigCooling, setSelectedRigCooling] = useState<MiningRig | null>(null);
+
+  // Utility to get nice name of a cooler
+  const getCoolerName = (id: string): string => {
+    if (id.includes('custom_ekwb')) return 'EKWB Premium Custom Loop Complete Pack';
+    if (id.includes('custom_corsair')) return 'Corsair Hydro X Series iCUE Custom Loop';
+    if (id.includes('custom_alphacool')) return 'Alphacool NexXxoS Copper Radiator Kit';
+    if (id.includes('custom_bitspower')) return 'Bitspower Premium Hardline Fittings Pack';
+    if (id.includes('custom_barrow')) return 'Barrow & Bykski Affordable Custom Loop';
+    
+    if (id.includes('arctic_lf3_240')) return 'ARCTIC Liquid Freezer III 240';
+    if (id.includes('arctic_lf3_280')) return 'ARCTIC Liquid Freezer III 280';
+    if (id.includes('arctic_lf3_360')) return 'ARCTIC Liquid Freezer III 360';
+    if (id.includes('thermalright_fe')) return 'Thermalright Frozen Edge 360';
+    if (id.includes('thermalright_fn')) return 'Thermalright Frozen Notte 360 ARGB';
+    if (id.includes('thermalright_gv')) return 'Thermalright Grand Vision 360';
+    if (id.includes('msi_a13')) return 'MSI MAG CoreLiquid A13';
+    if (id.includes('cm_atmos_stealth')) return 'Cooler Master MasterLiquid Atmos Stealth';
+    if (id.includes('cm_atmos')) return 'Cooler Master MasterLiquid Atmos 360';
+    if (id.includes('nzxt_kraken_elite_240')) return 'NZXT Kraken Elite 240';
+    if (id.includes('nzxt_kraken_elite_280')) return 'NZXT Kraken Elite 280';
+    if (id.includes('nzxt_kraken_elite_360')) return 'NZXT Kraken Elite 360';
+    if (id.includes('corsair_titan_rx_lcd')) return 'Corsair iCUE LINK Titan RX LCD';
+    if (id.includes('corsair_titan_rx')) return 'Corsair iCUE LINK Titan 360 RX';
+    if (id.includes('asus_ryujin_3')) return 'ASUS ROG Ryujin III 360';
+    if (id.includes('asus_ryuo_4')) return 'ASUS ROG Ryuo IV 360 ARGB';
+    if (id.includes('lianli_galahad_2_lcd')) return 'Lian Li Galahad II 360 LCD';
+    if (id.includes('lianli_hydroshift')) return 'Lian Li HydroShift LCD 360S';
+    if (id.includes('tryx_panorama')) return 'TRYX PANORAMA 360 Curved LCD';
+    if (id.includes('bequiet_pure_loop')) return 'be quiet! Pure Loop 3 360';
+    if (id.includes('bequiet_silent_loop')) return 'be quiet! Silent Loop 2 360';
+    if (id.includes('bequiet_light_loop')) return 'be quiet! Light Loop 360 ARGB';
+    if (id.includes('corsair_nautilus_360')) return 'Corsair Nautilus 360 RS';
+    return id.replace('wc_', '').replace(/_/g, ' ').toUpperCase();
+  };
+
+  // Compatibility checker
+  const checkCoolingCompatibility = (rigType: string, coolerId: string): { compatible: boolean; reason?: string } => {
+    const isAsic = rigType.toLowerCase().includes('asic');
+    const isWcCustom = coolerId.toLowerCase().includes('custom');
+
+    if (isAsic) {
+      return { compatible: false, reason: "Les machines ASIC ont un format industriel propriétaire incompatible avec les systèmes de watercooling grand public." };
+    }
+
+    if (rigType.includes('GB200') || rigType.includes('nvl72')) {
+      if (!isWcCustom) {
+        return { compatible: false, reason: "Le rack NVIDIA GB200 NVL72 dissipe 120kW et requiert impérativement une boucle Custom Loop industrielle." };
+      }
+    }
+
+    if (isWcCustom) {
+      const isHighEnd = rigType.includes('5090') || rigType.includes('4090') || rigType.includes('TITAN') || rigType.includes('6000') || rigType.includes('B200') || rigType.includes('H200') || rigType.includes('H100') || rigType.includes('MI300X') || rigType.includes('W7900') || rigType.includes('GB200');
+      if (!isHighEnd) {
+        return { compatible: false, reason: "Les boucles Custom Loop haut de gamme nécessitent des waterblocks spécifiques qui n'existent pas pour cette carte de milieu de gamme." };
+      }
+    }
+
+    return { compatible: true };
+  };
+
+  // Equip cooler
+  const handleEquipCooler = (rigId: string, coolerId: string) => {
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[currentPlayer.id];
+    const currentFarm = next.mining_farms[currentPlayer.id];
+    if (!currentFarm) return;
+
+    const rig = currentFarm.rigs.find(r => r.rig_id === rigId);
+    if (!rig) return;
+
+    // Check compatibility
+    const compat = checkCoolingCompatibility(rig.name || rig.type, coolerId);
+    if (!compat.compatible) {
+      alert(`Incompatible : ${compat.reason}`);
+      return;
+    }
+
+    // Initialize collections
+    if (!player.cooling_inventory) player.cooling_inventory = [];
+    
+    // Remove coolerId from inventory
+    const index = player.cooling_inventory.indexOf(coolerId);
+    if (index === -1) return;
+    player.cooling_inventory.splice(index, 1);
+
+    // If rig already has cooler, unequip it first
+    if (rig.assigned_cooler) {
+      player.cooling_inventory.push(rig.assigned_cooler);
+    }
+
+    // Set new cooler
+    rig.assigned_cooler = coolerId;
+
+    next.logs.unshift({
+      id: `log_equip_cooler_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: player.id,
+      message: `REFROIDISSEMENT: ${player.name} a monté le watercooling '${getCoolerName(coolerId).split(' (')[0]}' sur le rig '${rig.name}'!`,
+      status: 'OK'
+    });
+
+    onUpdateState(next);
+    setSelectedRigCooling(null);
+  };
+
+  // Unequip cooler
+  const handleUnequipCooler = (rigId: string) => {
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[currentPlayer.id];
+    const currentFarm = next.mining_farms[currentPlayer.id];
+    if (!currentFarm) return;
+
+    const rig = currentFarm.rigs.find(r => r.rig_id === rigId);
+    if (!rig) return;
+
+    if (!rig.assigned_cooler) return;
+
+    const coolerId = rig.assigned_cooler;
+    if (!player.cooling_inventory) player.cooling_inventory = [];
+    player.cooling_inventory.push(coolerId);
+    rig.assigned_cooler = undefined;
+
+    next.logs.unshift({
+      id: `log_unequip_cooler_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: player.id,
+      message: `REFROIDISSEMENT: ${player.name} a démonté le watercooling '${getCoolerName(coolerId).split(' (')[0]}' de '${rig.name}'.`,
+      status: 'OK'
+    });
+
+    onUpdateState(next);
+    setSelectedRigCooling(null);
+  };
+
   // Meter bypass state
   const [isHackingMeter, setIsHackingMeter] = useState<boolean>(false);
   const [relays, setRelays] = useState<number[]>([35, 60, 42]); // Target is exactly 50 for all three
@@ -249,7 +387,21 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
   farm.rigs.forEach(r => {
     if (r.wear_condition > 0.05) {
       const oc = r.overclocked ? 1.25 : 1.0;
-      const coolingBoost = (farm.cooling_type === 'LIQUID' && r.hashrate_th > 0) ? 1.08 : 1.0;
+      
+      let coolingBoost = 1.0;
+      if (r.assigned_cooler) {
+        const coolerId = r.assigned_cooler;
+        if (coolerId.includes('custom')) {
+          coolingBoost = 1.40;
+        } else if (coolerId.includes('elite') || coolerId.includes('ryujin') || coolerId.includes('tryx')) {
+          coolingBoost = 1.25;
+        } else {
+          coolingBoost = 1.15;
+        }
+      } else if (farm.cooling_type === 'LIQUID') {
+        coolingBoost = 1.08;
+      }
+
       totalWatts += r.watts_consumption * oc;
       totalHashrate += r.hashrate_th * r.wear_condition * oc * coolingBoost;
     }
@@ -368,12 +520,42 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
                       </div>
                     </>
                   ) : (
-                    <div className="flex justify-between text-gray-400">
-                      <span>Hashrate Efficace:</span>
-                      <span className="text-white font-bold">
-                        {Math.round(rig.hashrate_th * rig.wear_condition * (rig.overclocked ? 1.25 : 1) * (farm.cooling_type === 'LIQUID' ? 1.08 : 1)).toLocaleString()} TH/s
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex justify-between text-gray-400">
+                        <span>Hashrate Efficace:</span>
+                        <span className="text-white font-bold">
+                          {(() => {
+                            let coolingBoost = 1.0;
+                            if (rig.assigned_cooler) {
+                              if (rig.assigned_cooler.includes('custom')) coolingBoost = 1.40;
+                              else if (rig.assigned_cooler.includes('elite') || rig.assigned_cooler.includes('ryujin') || rig.assigned_cooler.includes('tryx')) coolingBoost = 1.25;
+                              else coolingBoost = 1.15;
+                            } else if (farm.cooling_type === 'LIQUID') {
+                              coolingBoost = 1.08;
+                            }
+                            return Math.round(rig.hashrate_th * rig.wear_condition * (rig.overclocked ? 1.25 : 1) * coolingBoost).toLocaleString();
+                          })()} TH/s
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-gray-400">
+                        <span>Watercooling:</span>
+                        {rig.assigned_cooler ? (
+                          <button
+                            onClick={() => setSelectedRigCooling(rig)}
+                            className="text-cyan-400 font-bold hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
+                          >
+                            💧 {getCoolerName(rig.assigned_cooler).split(' 240')[0].split(' 280')[0].split(' 360')[0]}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setSelectedRigCooling(rig)}
+                            className="text-gray-500 hover:text-cyan-400 transition cursor-pointer flex items-center gap-1 text-[11px] underline decoration-dotted"
+                          >
+                            ➕ Installer Watercooling
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                   <div className="flex justify-between text-gray-400">
                     <span>Conso Watt:</span>
@@ -646,6 +828,139 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WATERCOOLING EQUIPMENT INTERACTIVE MODAL */}
+      {selectedRigCooling && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0A0A0E] border border-cyan-500/30 max-w-xl w-full rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col">
+            <div className="bg-[#0F0F16] border-b border-white/10 px-6 py-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-cyan-400 animate-pulse" />
+                <h3 className="text-sm font-mono font-bold text-white uppercase tracking-wider">
+                  Gestion du Refroidissement
+                </h3>
+              </div>
+              <button 
+                onClick={() => setSelectedRigCooling(null)}
+                className="text-gray-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Target Rig Details */}
+              <div className="bg-[#08080C] border border-white/5 p-4 rounded-xl space-y-1">
+                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">{selectedRigCooling.type}</span>
+                <h4 className="text-base font-bold text-white">{selectedRigCooling.name}</h4>
+                
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400 font-mono mt-2 pt-2 border-t border-white/5">
+                  <div>
+                    Hashrate de base : <span className="text-white font-bold">{selectedRigCooling.hashrate_th} TH/s</span>
+                  </div>
+                  <div>
+                    Refroidissement équipé : {selectedRigCooling.assigned_cooler ? (
+                      <span className="text-cyan-400 font-bold">💧 {getCoolerName(selectedRigCooling.assigned_cooler).split(' (')[0]}</span>
+                    ) : (
+                      <span className="text-gray-500">Aucun (Air standard)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Equipped Cooler Details */}
+              {selectedRigCooling.assigned_cooler ? (
+                <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-4 flex items-center justify-between font-mono text-xs">
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-cyan-400 uppercase font-bold">Système Équipé</p>
+                    <p className="text-white font-bold">{getCoolerName(selectedRigCooling.assigned_cooler)}</p>
+                    <p className="text-gray-400 text-[11px] leading-relaxed mt-1">
+                      {selectedRigCooling.assigned_cooler.includes('custom') ? (
+                        <span className="text-cyan-300">Boost Hashrate: +40% | Usure du rig: -85%</span>
+                      ) : selectedRigCooling.assigned_cooler.includes('elite') || selectedRigCooling.assigned_cooler.includes('ryujin') || selectedRigCooling.assigned_cooler.includes('tryx') ? (
+                        <span className="text-cyan-300">Boost Hashrate: +25% | Usure du rig: -70%</span>
+                      ) : (
+                        <span className="text-cyan-300">Boost Hashrate: +15% | Usure du rig: -50%</span>
+                      )}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => handleUnequipCooler(selectedRigCooling.rig_id)}
+                    className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs font-bold transition cursor-pointer"
+                  >
+                    Démonter
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-2 bg-[#08080C] border border-dashed border-white/10 rounded-xl text-xs text-gray-500 font-mono">
+                  Aucun kit de watercooling monté sur ce rig. Performance standard à l'air.
+                </div>
+              )}
+
+              {/* Available Inventory list */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold">
+                  Systèmes de refroidissement disponibles ({currentPlayer.cooling_inventory?.length || 0})
+                </h4>
+
+                {(!currentPlayer.cooling_inventory || currentPlayer.cooling_inventory.length === 0) ? (
+                  <div className="bg-[#08080C] border border-white/5 p-6 rounded-xl text-center space-y-2 text-xs font-mono">
+                    <p className="text-gray-400">Votre inventaire de refroidissement est vide.</p>
+                    <p className="text-[11px] text-gray-500">
+                      Allez dans <span className="text-cyan-400">Marchés & P2P</span> pour acheter des kits de Watercooling AIO ou des pièces Custom Loop.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    {currentPlayer.cooling_inventory.map((coolerId, idx) => {
+                      const compat = checkCoolingCompatibility(selectedRigCooling.name || selectedRigCooling.type, coolerId);
+                      const isCustom = coolerId.includes('custom');
+                      return (
+                        <div 
+                          key={`${coolerId}-${idx}`} 
+                          className={`border rounded-xl p-3.5 flex items-center justify-between gap-4 font-mono text-xs transition ${
+                            compat.compatible 
+                              ? 'bg-[#08080C] border-white/5 hover:border-cyan-500/20' 
+                              : 'bg-red-950/10 border-red-950/40 opacity-50'
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                              isCustom ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20'
+                            }`}>
+                              {isCustom ? 'INDUSTRIAL CUSTOM LOOP' : 'WATERCOOLING AIO'}
+                            </span>
+                            <p className="text-white font-bold mt-1.5">{getCoolerName(coolerId)}</p>
+                            {!compat.compatible && compat.reason && (
+                              <p className="text-[11px] text-red-400 leading-relaxed font-sans mt-1">
+                                ❌ Incompatible: {compat.reason}
+                              </p>
+                            )}
+                          </div>
+
+                          {compat.compatible ? (
+                            <button
+                              onClick={() => handleEquipCooler(selectedRigCooling.rig_id, coolerId)}
+                              className="px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 hover:text-cyan-300 rounded-lg font-bold transition cursor-pointer whitespace-nowrap text-xs"
+                            >
+                              Monter
+                            </button>
+                          ) : (
+                            <span className="text-gray-500 font-bold whitespace-nowrap px-2.5 py-1 bg-white/5 rounded text-xs">
+                              Bloqué
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

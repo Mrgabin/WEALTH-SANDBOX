@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "UserSave": {
+      "title": "UserSave",
+      "description": "Sauvegarde individuelle de la partie d'un joueur contenant son profil, ses fermes de minage et ses acquisitions immobilières.",
+      "type": "object",
+      "properties": {
+        "current_player_id": {
+          "type": "string",
+          "description": "ID unique du joueur actif"
+        },
+        "players": {
+          "type": "object",
+          "description": "Dictionnaire des profils de joueurs enregistrés"
+        },
+        "mining_farms": {
+          "type": "object",
+          "description": "Dictionnaire des fermes de minage"
+        },
+        "real_estate_agencies": {
+          "type": "array",
+          "description": "Liste des agences immobilières et biens"
+        },
+        "player_shops": {
+          "type": "array",
+          "description": "Liste des boutiques de matériel P2P"
+        },
+        "tick_count": {
+          "type": "integer",
+          "description": "Nombre de cycles écoulés"
+        },
+        "market_prices": {
+          "type": "array",
+          "description": "Historique et cours du marché financier"
+        },
+        "logs": {
+          "type": "array",
+          "description": "Historique des journaux d'activité"
+        }
+      },
+      "required": ["current_player_id", "players"]
+    }
+  },
+  "firestore": {
+    "/users_saves/{userId}": {
+      "schema": "UserSave",
+      "description": "Sauvegarde individuelle de l'utilisateur authentifié"
+    }
+  }
+}

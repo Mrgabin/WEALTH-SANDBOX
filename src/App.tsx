@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FullGlobalState } from './types/wealth';
 import { loadSavedState, saveGlobalState, executeGlobalServerTick } from './lib/gameEngine';
-import { subscribeAuthState, logoutFirebase } from './lib/firebase';
+import { subscribeAuthState, logoutFirebase, saveStateToFirestore, loadStateFromFirestore } from './lib/firebase';
 import { LandingPage } from './components/LandingPage';
 import { Navbar } from './components/Navbar';
 import { Sidebar, ActiveTab } from './components/Sidebar';
@@ -14,6 +14,7 @@ import { Casino } from './components/Casino';
 import { StockMarket } from './components/StockMarket';
 import { BankTab } from './components/BankTab';
 import { GuideAndKnowledge } from './components/GuideAndKnowledge';
+import { ChargesTab } from './components/ChargesTab';
 import { AuthModal } from './components/AuthModal';
 import { ShieldAlert, Sparkles, TrendingDown, Megaphone, CheckCircle2 } from 'lucide-react';
 
@@ -22,18 +23,31 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Track Authentication Status (defaults to false for unauthenticated visitors)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('wealth_sandbox_is_authenticated') === 'true';
   });
 
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state & Load Firestore state when logged in
   useEffect(() => {
-    const unsubscribe = subscribeAuthState((user) => {
+    const unsubscribe = subscribeAuthState(async (user) => {
       if (user) {
         setIsAuthenticated(true);
         localStorage.setItem('wealth_sandbox_is_authenticated', 'true');
+        
+        // Fetch real-time game state from Firestore on successful login
+        setIsSyncing(true);
+        const cloudState = await loadStateFromFirestore();
+        if (cloudState && cloudState.players) {
+          setState(cloudState);
+          saveGlobalState(cloudState);
+        } else {
+          // If Firestore is empty, initialize it with the local/default state
+          await saveStateToFirestore(state);
+        }
+        setIsSyncing(false);
       }
     });
     return () => unsubscribe();
@@ -44,7 +58,14 @@ export default function App() {
     if (!state.is_tick_running) return;
 
     const timer = setInterval(() => {
-      setState(prevState => executeGlobalServerTick(prevState));
+      setState(prevState => {
+        const next = executeGlobalServerTick(prevState);
+        // Periodic Firestore backup of server-tick developments (every 10 ticks / 30 seconds)
+        if (next.tick_count % 10 === 0) {
+          saveStateToFirestore(next);
+        }
+        return next;
+      });
     }, 3000);
 
     return () => clearInterval(timer);
@@ -53,6 +74,7 @@ export default function App() {
   const handleUpdateState = (newState: FullGlobalState) => {
     setState(newState);
     saveGlobalState(newState);
+    saveStateToFirestore(newState);
   };
 
   const handleCloseActiveEvent = () => {
@@ -63,16 +85,15 @@ export default function App() {
 
   const handleSwitchPlayer = (playerId: string) => {
     const next = { ...state, current_player_id: playerId };
-    setState(next);
-    saveGlobalState(next);
+    handleUpdateState(next);
   };
 
   const handleManualTick = () => {
     const next = executeGlobalServerTick(state);
-    setState(next);
+    handleUpdateState(next);
   };
 
-  const handleLoginSuccess = (playerId: string, updatedState: FullGlobalState) => {
+  const handleLoginSuccess = async (playerId: string, updatedState: FullGlobalState) => {
     setIsAuthenticated(true);
     localStorage.setItem('wealth_sandbox_is_authenticated', 'true');
     handleUpdateState(updatedState);
@@ -179,6 +200,9 @@ export default function App() {
             )}
             {activeTab === 'stocks' && (
               <StockMarket state={state} onUpdateState={handleUpdateState} />
+            )}
+            {activeTab === 'charges' && (
+              <ChargesTab state={state} onUpdateState={handleUpdateState} />
             )}
           </div>
         </main>

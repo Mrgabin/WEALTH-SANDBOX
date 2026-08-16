@@ -20,6 +20,22 @@ export interface TradingPosition {
   take_profit?: number;
 }
 
+export interface ShopProperty {
+  id: string;
+  city: string; // e.g. "Paris Centre", "Mende (Lozère)", etc.
+  type: 'EPICERIE' | 'BOULANGERIE' | 'BISTRO' | 'BOUTIQUE_MODE' | 'HIGH_TECH' | 'BIJOUTERIE';
+  name: string;
+  buy_cost: number;
+  base_revenue: number;
+  current_stock: number;
+  max_stock: number;
+  selected_supply_type: 'LOW_COST' | 'STANDARD' | 'PREMIUM';
+  sell_price_multiplier: number; // e.g. 1.0 to 3.0
+  com_campaign: 'NONE' | 'FLYERS' | 'SOCIAL_MEDIA' | 'TV';
+  last_tick_revenue?: number;
+  last_tick_profit?: number;
+}
+
 export interface PlayerProfile {
   id: string;
   name: string;
@@ -37,6 +53,10 @@ export interface PlayerProfile {
   possessions?: string[]; // Item codes or names owned by the player
   active_positions?: TradingPosition[];
   account_age_months?: number;
+  cooling_inventory?: string[]; // Owned unassigned watercoolers (e.g. wc_arctic_lf3_240)
+  active_subscriptions?: string[]; // Active subscriptions (e.g. ['vpn_premium'])
+  shop_properties?: ShopProperty[]; // Owned small shops in France
+  achievements?: string[]; // List of unlocked achievement IDs
 }
 
 export interface PlayerShopItem {
@@ -91,6 +111,8 @@ export interface MiningRig {
   watts_consumption: number;
   wear_condition: number; // 0.0 - 1.0
   overclocked: boolean;
+  assigned_cooler?: string; // ID of assigned cooler (e.g., wc_arctic_lf3_240)
+  shelved?: boolean; // Set aside/remisée, doesn't consume power or produce hash
 }
 
 export interface MiningFarm {
@@ -99,6 +121,7 @@ export interface MiningFarm {
   power_capacity_watts: number;
   cooling_type: 'AIR' | 'LIQUID';
   rigs: MiningRig[];
+  power_upgrade_kw?: number; // Total purchased grid power upgrades in kW
 }
 
 export interface AuctionItem {

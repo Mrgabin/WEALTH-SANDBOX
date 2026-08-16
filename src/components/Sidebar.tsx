@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { PlayerProfile } from '../types/wealth';
 
-export type ActiveTab = 'dashboard' | 'guide' | 'shops' | 'bank' | 'realestate' | 'mining' | 'laundering' | 'casino' | 'stocks';
+export type ActiveTab = 'dashboard' | 'guide' | 'shops' | 'bank' | 'realestate' | 'mining' | 'laundering' | 'casino' | 'stocks' | 'charges';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -33,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, playe
     { id: 'realestate', label: 'Immobilier & Parcs', icon: <Building2 className="w-4 h-4" /> },
     { id: 'mining', label: 'Minage Crypto 24/7', icon: <Cpu className="w-4 h-4" />, badge: 'LIVE' },
     { id: 'laundering', label: 'Blanchiment & ISF', icon: <DollarSign className="w-4 h-4" /> },
+    { id: 'charges', label: 'Taxes & Abonnements', icon: <Activity className="w-4 h-4 text-purple-400" />, badge: 'IMPÔTS' },
     { id: 'casino', label: 'Casino & Mini-Jeux', icon: <Dices className="w-4 h-4" /> },
     { id: 'stocks', label: 'Bourse & Cryptos', icon: <TrendingUp className="w-4 h-4" /> },
   ];

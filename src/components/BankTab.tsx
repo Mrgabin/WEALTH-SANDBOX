@@ -13,6 +13,132 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
   const [loanIsDirty, setLoanIsDirty] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState<string>('');
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+
+  // Handle Cash Deposits (risk of TRACFIN audit for large quantities)
+  const handleDeposit = (amountStr: string) => {
+    const amount = parseInt(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      setErrorMessage("Veuillez entrer un montant de dépôt valide supérieur à 0.");
+      return;
+    }
+    if (currentPlayer.cash_dirty < amount) {
+      setErrorMessage("Vous ne possédez pas autant d'argent liquide (Cash Sale) !");
+      return;
+    }
+
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[next.current_player_id];
+
+    // Deduct cash dirty
+    player.cash_dirty -= amount;
+
+    // Calculate audit risk & transaction fees based on deposit amount
+    let risk = 0;
+    let feePercent = 0;
+    if (amount <= 1000) {
+      risk = 0.01; // extremely low risk
+      feePercent = 0.0;
+    } else if (amount <= 10000) {
+      risk = 0.12; // 12% risk
+      feePercent = 0.02; // 2% fee
+    } else if (amount <= 50000) {
+      risk = 0.35; // 35% risk
+      feePercent = 0.05; // 5% fee
+    } else {
+      risk = 0.65; // 65% risk of audit
+      feePercent = 0.12; // 12% fee
+    }
+
+    // VPN subscription safety discount reduces audit risks by 75%
+    if (player.active_subscriptions?.includes('vpn_premium')) {
+      risk = risk * 0.25;
+    }
+
+    const fee = Math.floor(amount * feePercent);
+    const depositNet = amount - fee;
+
+    const auditTriggered = Math.random() < risk;
+
+    if (auditTriggered) {
+      // 50% confiscation penalty by TRACFIN
+      const fine = Math.floor(depositNet * 0.50);
+      const remainingDeposit = depositNet - fine;
+      player.bank_clean += remainingDeposit;
+
+      next.logs.unshift({
+        id: `log_deposit_audit_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'TAX_ISF',
+        uid: player.id,
+        message: `🚨 CONTRÔLE TRACFIN : Dépôt suspect de ${amount.toLocaleString()} repéré chez ${player.name} ! Amende de 50% infligée (-${fine.toLocaleString()})`,
+        status: 'ALERT'
+      });
+
+      next.active_event = {
+        id: `event_audit_${Date.now()}`,
+        title: "🚨 COMPTE RENDU TRACFIN : SUSPICION DE BLANCHIMENT !",
+        description: `Votre dépôt de ${amount.toLocaleString()} en liquide a fait l'objet d'un signalement automatisé pour blanchiment d'argent d'origine non justifiée.`,
+        type: 'TAX_AUDIT' as any,
+        severity: 'CRITICAL',
+        impactText: `TRACFIN a saisi les fonds. Après examen administratif accéléré, une retenue forfaitaire de 50% (-${fine.toLocaleString()}) a été confisquée.`
+      };
+
+      setErrorMessage(`Contrôle fiscal TRACFIN ! Votre dépôt a été inspecté et taxé à hauteur de 50% pour suspicion d'origine illicite.`);
+      setTimeout(() => setErrorMessage(null), 8000);
+    } else {
+      player.bank_clean += depositNet;
+
+      next.logs.unshift({
+        id: `log_deposit_ok_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'DB_WRITE',
+        uid: player.id,
+        message: `BANQUE : Dépôt en espèces réussi par ${player.name} de ${amount.toLocaleString()} (Frais : ${fee.toLocaleString()})`,
+        status: 'OK'
+      });
+
+      setSuccessMessage(`Dépôt de ${depositNet.toLocaleString()} crédité sur votre compte bancaire.`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    }
+
+    setDepositAmount('');
+    onUpdateState(next);
+  };
+
+  // Handle Bank Withdrawals (convert bank clean money to spending cash)
+  const handleWithdraw = (amountStr: string) => {
+    const amount = parseInt(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      setErrorMessage("Veuillez entrer un montant de retrait valide supérieur à 0.");
+      return;
+    }
+    if (currentPlayer.bank_clean < amount) {
+      setErrorMessage("Fonds bancaires propres insuffisants.");
+      return;
+    }
+
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[next.current_player_id];
+
+    player.bank_clean -= amount;
+    player.cash_dirty += amount;
+
+    next.logs.unshift({
+      id: `log_withdraw_ok_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: player.id,
+      message: `BANQUE : Retrait en espèces de ${amount.toLocaleString()} effectué par ${player.name}`,
+      status: 'OK'
+    });
+
+    setSuccessMessage(`Retrait de ${amount.toLocaleString()} effectué. Le liquide est maintenant disponible.`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+    setWithdrawAmount('');
+    onUpdateState(next);
+  };
 
   // Take a loan
   const handleBorrow = (amount: number, isDirty: boolean) => {
@@ -146,6 +272,120 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
           <span>{successMessage}</span>
         </div>
       )}
+
+      {/* ATM Guichet Automatique de Dépôts et Retraits */}
+      <div className="bg-[#0F0F16] border border-white/5 rounded-2xl p-6 space-y-4">
+        <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider border-b border-white/5 pb-3">
+          🏦 Guichet Automatique Central (Dépôts & Retraits d'Espèces)
+        </h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Deposit Card */}
+          <div className="bg-[#08080C] border border-white/5 p-4 rounded-xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Coins className="w-4 h-4 text-amber-500" /> Verser des Espèces (Dépôt)
+              </h3>
+              <span className="text-[10px] text-gray-500">Disponible: ${currentPlayer.cash_dirty.toLocaleString()}</span>
+            </div>
+            
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              Versez vos espèces (Cash Sale) pour les sécuriser sur votre compte bancaire propre.
+              <br />
+              <span className="text-red-400 font-bold">⚠️ ATTENTION :</span> Les banques déclarent automatiquement les gros dépôts en espèces. Déposer de trop grosses sommes augmente le risque d'inspection <span className="text-red-400 font-bold">TRACFIN</span> et de saisie immédiate de 50% des fonds !
+            </p>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  placeholder="Montant du dépôt (ex: 5000)"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="flex-1 bg-[#0F0F16] border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  onClick={() => handleDeposit(depositAmount)}
+                  className="bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-4 py-2 rounded-lg text-xs font-mono uppercase transition cursor-pointer"
+                >
+                  Déposer
+                </button>
+              </div>
+
+              {/* Declarations and Risk table */}
+              <div className="bg-[#0F0F16] p-2.5 rounded border border-white/5 text-[10px] space-y-1.5 text-gray-500 font-mono">
+                <div className="flex justify-between text-gray-400">
+                  <span>Tranche de Dépôt</span>
+                  <span>Frais / Risque TRACFIN</span>
+                </div>
+                <div className="border-t border-white/5 my-1"></div>
+                <div className="flex justify-between">
+                  <span>&le; $1,000</span>
+                  <span className="text-green-400 font-bold">Gratuit • Risque &lt;1%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>$1,001 - $10,000</span>
+                  <span className="text-cyan-400">Frais 2% • Risque 12%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>$10,001 - $50,000</span>
+                  <span className="text-amber-500 font-bold">Frais 5% • Risque 35%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>&gt; $50,000</span>
+                  <span className="text-red-500 font-bold">Frais 12% • Risque 65%</span>
+                </div>
+                {currentPlayer.active_subscriptions?.includes('vpn_premium') && (
+                  <div className="border-t border-white/5 pt-1 mt-1 text-cyan-400 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                    VPN Premium Actif : Risques d'audit TRACFIN divisés par 4 !
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Withdrawal Card */}
+          <div className="bg-[#08080C] border border-white/5 p-4 rounded-xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-green-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Landmark className="w-4 h-4 text-green-500" /> Retirer du Liquide (Retrait)
+              </h3>
+              <span className="text-[10px] text-gray-500">Disponible: ${currentPlayer.bank_clean.toLocaleString()}</span>
+            </div>
+
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              Convertissez vos fonds propres en banque en billets de banque liquide (espèces) pour faire des achats de matériel d'occasion ou d'affaires dégradées en cash auprès des revendeurs P2P clandestins.
+              <br />
+              <span className="text-green-400 font-bold">✓ SÉCURISÉ :</span> Le retrait d'espèces de votre propre compte est 100% légal et ne comporte aucun risque de contrôle fiscal ou frais de déclaration.
+            </p>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  placeholder="Montant du retrait (ex: 1000)"
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  className="flex-1 bg-[#0F0F16] border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  onClick={() => handleWithdraw(withdrawAmount)}
+                  className="bg-green-500 hover:bg-green-400 text-black font-extrabold px-4 py-2 rounded-lg text-xs font-mono uppercase transition cursor-pointer"
+                >
+                  Retirer
+                </button>
+              </div>
+
+              {/* Declarations information */}
+              <div className="bg-[#0F0F16] p-3 rounded border border-white/5 text-[10px] text-gray-500 leading-relaxed font-mono">
+                <p className="text-green-400 font-bold">Réglementation des retraits :</p>
+                Aucune limite de montant ni de déclaration fiscale. Les espèces retirées sont immédiatement ajoutées à votre portefeuille de Cash Sale et prêtes pour des transactions discrètes.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Card: Apply for Loan */}

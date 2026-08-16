@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { FullGlobalState, PlayerProfile } from '../types/wealth';
-import { signUpWithFirebase, signInWithFirebase } from '../lib/firebase';
+import { signInWithGoogle } from '../lib/firebase';
 import { 
-  Rocket, 
-  Key, 
-  UserPlus, 
+  Rocket,
+  Key,
   Cpu, 
   DollarSign, 
   Building2, 
@@ -22,7 +21,8 @@ import {
   Zap,
   Globe,
   Award,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -32,17 +32,12 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess }) => {
   const [activeTab, setActiveTab] = useState<'showcase' | 'about' | 'auth'>('showcase');
-  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
 
   // Form State
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const scrollToAuth = (mode: 'register' | 'login' = 'register') => {
-    setAuthMode(mode);
+  const scrollToAuth = () => {
     setActiveTab('auth');
     const authElem = document.getElementById('auth-form-section');
     if (authElem) {
@@ -50,46 +45,53 @@ export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess 
     }
   };
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setErrorMessage('');
     setLoading(true);
+    try {
+      const result = await signInWithGoogle();
+      const user = result.user;
+      if (!user) throw new Error("Impossible d'obtenir les informations de l'utilisateur Google.");
 
-    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+      const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+      const targetEmail = user.email || `${user.displayName?.toLowerCase().replace(/\s+/g, '') || 'googleuser'}@gmail.com`;
+      const displayName = user.displayName || targetEmail.split('@')[0];
 
-    if (authMode === 'register') {
-      if (!username || !password || !email) {
-        setErrorMessage("Veuillez remplir tous les champs (Nom d'utilisateur, Email, Mot de passe).");
+      // Match existing profile
+      const found = Object.values(next.players).find(
+        p => p.email.toLowerCase() === targetEmail.toLowerCase()
+      );
+
+      if (found) {
+        next.current_player_id = found.id;
+        next.logs.unshift({
+          id: `log_login_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString(),
+          type: 'DB_WRITE',
+          uid: found.id,
+          message: `CONNEXION GOOGLE AUTH: Utilisateur ${found.name} authentifié avec succès`,
+          status: 'OK'
+        });
+
         setLoading(false);
-        return;
-      }
-
-      try {
-        // Attempt Real Firebase Auth Creation
-        try {
-          await signUpWithFirebase(email, password);
-        } catch (fbErr: any) {
-          console.warn("Firebase Auth Notice:", fbErr.message || fbErr);
-          // If user already exists or firebase offline, continue creating player profile
-        }
-
+        onLoginSuccess(found.id, next);
+      } else {
         const newId = `player_${Date.now().toString().slice(-4)}`;
         const newProfile: PlayerProfile = {
           id: newId,
-          name: username,
-          email: email,
-          password: password,
+          name: displayName,
+          email: targetEmail,
+          password: '',
           role: 'PLAYER',
           cash_dirty: 50000,
           bank_clean: 50000,
-          credit_score: 680,
-          licenses: ['HARDWARE_STORE_OWNER'],
+          credit_score: 650,
+          licenses: [],
           electricity_meter_hacked: false,
           meter_hacked_risk: 0,
           last_active: new Date().toISOString(),
-          avatar_color: '#06b6d4'
+          avatar_color: '#3b82f6'
         };
-
         next.players[newId] = newProfile;
         next.current_player_id = newId;
 
@@ -98,78 +100,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess 
           timestamp: new Date().toLocaleTimeString(),
           type: 'DB_WRITE',
           uid: newId,
-          message: `NOUVELLE INSCRIPTION FIREBASE: Compte '${username}' (${email}) enregistré en BDD wealthsand-c07bb`,
+          message: `INSCRIPTION GOOGLE AUTH: Compte '${displayName}' (${targetEmail}) enregistré en BDD`,
           status: 'OK'
         });
 
         setLoading(false);
         onLoginSuccess(newId, next);
-      } catch (err: any) {
-        setErrorMessage(err.message || "Erreur lors de l'inscription.");
-        setLoading(false);
       }
-    } else {
-      // Login Mode
-      if (!email || !password) {
-        setErrorMessage("Veuillez saisir votre email / nom d'utilisateur et mot de passe.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        // Attempt Real Firebase Auth Sign In
-        try {
-          await signInWithFirebase(email, password);
-        } catch (fbErr: any) {
-          console.warn("Firebase Sign-in Notice:", fbErr.message || fbErr);
-        }
-
-        // Match existing profile
-        const found = Object.values(next.players).find(
-          p => p.email.toLowerCase() === email.toLowerCase() || p.name.toLowerCase() === email.toLowerCase()
-        );
-
-        if (found) {
-          next.current_player_id = found.id;
-          next.logs.unshift({
-            id: `log_login_${Date.now()}`,
-            timestamp: new Date().toLocaleTimeString(),
-            type: 'DB_WRITE',
-            uid: found.id,
-            message: `CONNEXION FIREBASE AUTH: Utilisateur ${found.name} authentifié avec succès`,
-            status: 'OK'
-          });
-
-          setLoading(false);
-          onLoginSuccess(found.id, next);
-        } else {
-          // If first time logging in via firebase or unknown user, auto-create profile
-          const newId = `player_${Date.now().toString().slice(-4)}`;
-          const newProfile: PlayerProfile = {
-            id: newId,
-            name: email.split('@')[0] || 'Joueur',
-            email: email,
-            password: password,
-            role: 'PLAYER',
-            cash_dirty: 50000,
-            bank_clean: 50000,
-            credit_score: 650,
-            licenses: [],
-            electricity_meter_hacked: false,
-            meter_hacked_risk: 0,
-            last_active: new Date().toISOString(),
-            avatar_color: '#3b82f6'
-          };
-          next.players[newId] = newProfile;
-          next.current_player_id = newId;
-
-          setLoading(false);
-          onLoginSuccess(newId, next);
-        }
-      } catch (err: any) {
-        setErrorMessage(err.message || "Erreur de connexion.");
-        setLoading(false);
-      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Erreur lors de l'authentification Google.");
+      setLoading(false);
     }
   };
 
@@ -211,7 +151,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess 
             À Propos & Conception
           </button>
           <button
-            onClick={() => scrollToAuth('login')}
+            onClick={() => scrollToAuth()}
             className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold transition cursor-pointer flex items-center gap-2 shadow-[0_0_12px_rgba(34,211,238,0.2)]"
           >
             <Key className="w-3.5 h-3.5 text-cyan-400" />
@@ -247,7 +187,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess 
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <button
-                onClick={() => scrollToAuth('register')}
+                onClick={() => scrollToAuth()}
                 className="px-8 py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold font-mono text-sm uppercase tracking-wider transition cursor-pointer shadow-[0_0_25px_rgba(34,211,238,0.4)] flex items-center gap-3 transform hover:-translate-y-0.5"
               >
                 <Rocket className="w-5 h-5" />
@@ -416,106 +356,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ state, onLoginSuccess 
                 <ShieldCheck className="w-3.5 h-3.5" /> CONNEXION SÉCURISÉE
               </div>
               <h3 className="text-2xl font-black text-white font-sans">
-                {authMode === 'register' ? 'Créer votre Compte Joueur' : 'Connexion à Wealth Sandbox'}
+                Rejoindre Wealth Sandbox
               </h3>
-              <p className="text-xs text-gray-400 font-sans">
-                {authMode === 'register' 
-                  ? 'Inscrivez-vous pour créer votre profil et recevoir $50,000 de capital de départ.' 
-                  : 'Saisissez vos identifiants pour accéder à votre progression.'}
+              <p className="text-xs text-gray-400 font-sans leading-relaxed">
+                Connectez-vous instantanément à l'aide de votre compte Google pour créer votre profil de joueur (avec $50,000 offerts) ou reprendre votre progression là où vous vous étiez arrêté.
               </p>
-            </div>
-
-            {/* Auth Toggle Tabs */}
-            <div className="flex bg-[#08080C] p-1 rounded-xl border border-white/10 font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => { setAuthMode('register'); setErrorMessage(''); }}
-                className={`flex-1 py-2.5 rounded-lg transition cursor-pointer font-bold flex items-center justify-center gap-2 ${
-                  authMode === 'register' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <UserPlus className="w-4 h-4 text-cyan-400" />
-                <span>Formule Inscription</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('login'); setErrorMessage(''); }}
-                className={`flex-1 py-2.5 rounded-lg transition cursor-pointer font-bold flex items-center justify-center gap-2 ${
-                  authMode === 'login' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <Key className="w-4 h-4 text-cyan-400" />
-                <span>Connexion</span>
-              </button>
             </div>
 
             {/* Error Display */}
             {errorMessage && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl text-xs font-mono">
-                {errorMessage}
+                ⚠ {errorMessage}
               </div>
             )}
 
-            {/* Auth Form */}
-            <form onSubmit={handleAuthSubmit} className="space-y-4 font-mono text-xs">
-              {authMode === 'register' && (
-                <div>
-                  <label className="text-gray-400 text-[10px] uppercase block mb-1">Nom d'Utilisateur / Pseudo</label>
-                  <input
-                    type="text"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="ex: Alex_Vance"
-                    className="w-full bg-[#08080C] border border-white/10 text-white p-3 rounded-xl focus:outline-none focus:border-cyan-400"
-                  />
-                </div>
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full py-4 rounded-xl bg-white hover:bg-white/95 text-black font-extrabold text-xs uppercase tracking-wider transition cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.15)] flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  <span>CONNEXION EN COURS...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  <span>S'identifier avec Google</span>
+                </>
               )}
-
-              <div>
-                <label className="text-gray-400 text-[10px] uppercase block mb-1">Adresse Email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ex: alex.vance@nexus.io"
-                  className="w-full bg-[#08080C] border border-white/10 text-white p-3 rounded-xl focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              <div>
-                <label className="text-gray-400 text-[10px] uppercase block mb-1">Mot de Passe</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-[#08080C] border border-white/10 text-white p-3 rounded-xl focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs uppercase tracking-wider transition cursor-pointer shadow-[0_0_20px_rgba(34,211,238,0.3)] flex items-center justify-center gap-2 mt-2"
-              >
-                {loading ? (
-                  <span>AUTHENTIFICATION EN COURS...</span>
-                ) : authMode === 'register' ? (
-                  <>
-                    <Rocket className="w-4 h-4" />
-                    <span>S'Inscrire & Démarrer ($50,000 Offerts)</span>
-                  </>
-                ) : (
-                  <>
-                    <Key className="w-4 h-4" />
-                    <span>Se Connecter au Jeu</span>
-                  </>
-                )}
-              </button>
-            </form>
+            </button>
           </div>
         </section>
       </main>

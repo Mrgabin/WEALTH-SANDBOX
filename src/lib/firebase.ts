@@ -5,6 +5,8 @@ import {
   signInWithEmailAndPassword, 
   signOut as fbSignOut,
   onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
   User
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -59,12 +61,67 @@ export async function logoutFirebase() {
   return await fbSignOut(auth);
 }
 
+export async function signInWithGoogle() {
+  if (!auth) throw new Error("Firebase Auth non initialisé");
+  const provider = new GoogleAuthProvider();
+  return await signInWithPopup(auth, provider);
+}
+
 export function subscribeAuthState(callback: (user: User | null) => void) {
   if (!auth) {
     callback(null);
     return () => {};
   }
   return onAuthStateChanged(auth, callback);
+}
+
+// Firestore Database Sync Helpers
+function sanitizeForFirestore(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeForFirestore);
+  }
+  if (typeof obj === 'object') {
+    const clean: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) {
+          clean[key] = sanitizeForFirestore(val);
+        } else {
+          clean[key] = null;
+        }
+      }
+    }
+    return clean;
+  }
+  return obj;
+}
+
+export async function saveStateToFirestore(state: any) {
+  if (!db || !isFirebaseConnected || !auth?.currentUser) return;
+  try {
+    const docRef = doc(db, 'users_saves', auth.currentUser.uid);
+    const sanitized = sanitizeForFirestore(state);
+    await setDoc(docRef, sanitized);
+  } catch (e) {
+    console.error("Error saving state to Firestore:", e);
+  }
+}
+
+export async function loadStateFromFirestore(): Promise<any | null> {
+  if (!db || !isFirebaseConnected || !auth?.currentUser) return null;
+  try {
+    const docRef = doc(db, 'users_saves', auth.currentUser.uid);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (e) {
+    console.error("Error loading state from Firestore:", e);
+  }
+  return null;
 }
 
 export { auth, db, isFirebaseConnected, firebaseConfig };

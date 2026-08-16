@@ -177,14 +177,15 @@ const LUXURY_PRESTIGE_MARKETPLACE: LuxuryItem[] = [
 ];
 
 export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'shops' | 'auctions' | 'luxury'>('shops');
+  const [activeSubTab, setActiveSubTab] = useState<'shops' | 'ebay_revente' | 'auctions' | 'luxury'>('shops');
   const [hardwareFilter, setHardwareFilter] = useState<'ALL' | 'DATACENTER' | 'WORKSTATION' | '5000' | '4000' | '3000' | '2000' | 'ASIC' | 'WATERCOOLING'>('ALL');
+  const [sortOption, setSortOption] = useState<'NONE' | 'PRICE_ASC' | 'PRICE_DESC' | 'STOCK_DESC'>('NONE');
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
 
   const currentPlayer = state.players[state.current_player_id] || Object.values(state.players)[0];
 
   const getFilteredHardwareItems = () => {
-    return DETAILED_HARDWARE_ITEMS.filter(item => {
+    let items = DETAILED_HARDWARE_ITEMS.filter(item => {
       if (hardwareFilter === 'ALL') return true;
       if (hardwareFilter === 'ASIC') return item.type === 'ASIC';
       if (hardwareFilter === 'WATERCOOLING') return item.type === 'WATERCOOLING';
@@ -208,6 +209,25 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
       }
       return true;
     });
+
+    // Apply sorting options
+    if (sortOption === 'PRICE_ASC') {
+      items = [...items].sort((a, b) => a.sell_price - b.sell_price);
+    } else if (sortOption === 'PRICE_DESC') {
+      items = [...items].sort((a, b) => b.sell_price - a.sell_price);
+    } else if (sortOption === 'STOCK_DESC') {
+      items = [...items].sort((a, b) => {
+        const stockA = state.global_hardware_stock ? (state.global_hardware_stock[a.id] ?? 0) : a.stock;
+        const stockB = state.global_hardware_stock ? (state.global_hardware_stock[b.id] ?? 0) : b.stock;
+        
+        // Sort available items first, then by quantity
+        if (stockA > 0 && stockB <= 0) return -1;
+        if (stockA <= 0 && stockB > 0) return 1;
+        return stockB - stockA;
+      });
+    }
+
+    return items;
   };
 
   // Handler: Buy hardware item from shop
@@ -241,34 +261,41 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
     }
     next.global_hardware_stock[itemId] = currentStock - 1;
 
-    // Add hardware to player farm
-    let farm = next.mining_farms[player.id];
-    if (!farm) {
-      farm = {
-        location_id: 'default_garage',
-        location_name: 'Garage Personnel',
-        power_capacity_watts: 15000,
-        cooling_type: 'AIR',
-        rigs: []
-      };
-      next.mining_farms[player.id] = farm;
-    }
-
+    let successMsg = "";
     if (item.type === 'WATERCOOLING') {
-      farm.cooling_type = 'LIQUID';
-    }
+      if (!player.cooling_inventory) {
+        player.cooling_inventory = [];
+      }
+      player.cooling_inventory.push(item.id);
+      successMsg = `Refroidissement ${item.name} acheté ! Retrouvez-le dans l'onglet 'Minage Crypto' pour l'équiper sur une carte.`;
+    } else {
+      // Add hardware to player farm
+      let farm = next.mining_farms[player.id];
+      if (!farm) {
+        farm = {
+          location_id: 'default_garage',
+          location_name: 'Garage Personnel',
+          power_capacity_watts: 15000,
+          cooling_type: 'AIR',
+          rigs: []
+        };
+        next.mining_farms[player.id] = farm;
+      }
 
-    farm.rigs.push({
-      id: `rig_${Date.now()}`,
-      rig_id: `rig_${Date.now()}`,
-      name: `${item.name} (#${farm.rigs.length + 1})`,
-      type: item.type === 'WATERCOOLING' ? 'WATERCOOLING' : (item.type === 'GPU' ? 'GPU_RTX_4090' : 'ASIC_BITMAIN_S19'),
-      bought_from_shop: 'Boutique Hardware Centrale',
-      hashrate_th: item.hashrate_th || 0,
-      watts_consumption: item.watts_consumption || (item.type === 'WATERCOOLING' ? (item.id.includes('custom') ? 35 : 15) : 1000),
-      wear_condition: 1.0,
-      overclocked: false
-    } as any);
+      farm.rigs.push({
+        id: `rig_${Date.now()}`,
+        rig_id: `rig_${Date.now()}`,
+        name: `${item.name} (#${farm.rigs.length + 1})`,
+        type: item.type === 'GPU' ? 'GPU_RTX_4090' : 'ASIC_BITMAIN_S19',
+        bought_from_shop: 'Boutique Hardware Centrale',
+        hashrate_th: item.hashrate_th || 0,
+        watts_consumption: item.watts_consumption || 1000,
+        wear_condition: 1.0,
+        overclocked: false,
+        hardware_id: item.id
+      } as any);
+      successMsg = `Matériel ${item.name} acheté et expédié à votre Ferme de Minage !`;
+    }
 
     next.logs.unshift({
       id: `log_buy_${Date.now()}`,
@@ -279,8 +306,81 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
       status: 'OK'
     });
 
-    setPurchaseSuccess(`Matériel ${item.name} acheté et expédié à votre Ferme de Minage !`);
-    setTimeout(() => setPurchaseSuccess(null), 3000);
+    setPurchaseSuccess(successMsg);
+    setTimeout(() => setPurchaseSuccess(null), 4000);
+
+    onUpdateState(next);
+  };
+
+  // Handler: Buy used, defective hardware item from eBay Revente in Cash Sale (cash_dirty)
+  const handleBuyEbayItem = (itemId: string) => {
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[next.current_player_id];
+    const item = DETAILED_HARDWARE_ITEMS.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Used price is 50% of original sell_price
+    const usedPrice = Math.floor(item.sell_price * 0.50);
+
+    if (player.cash_dirty < usedPrice) {
+      alert(`Argent liquide (Cash Sale) insuffisant ! Il vous faut ${usedPrice.toLocaleString()} en liquide.`);
+      return;
+    }
+
+    // Deduct cash dirty
+    player.cash_dirty -= usedPrice;
+
+    let successMsg = "";
+    if (item.type === 'WATERCOOLING') {
+      if (!player.cooling_inventory) {
+        player.cooling_inventory = [];
+      }
+      player.cooling_inventory.push(item.id);
+      successMsg = `Refroidissement d'occasion ${item.name} acheté en liquide ! Équipez-le sur une de vos cartes dans 'Minage Crypto'.`;
+    } else {
+      // Add hardware to player farm
+      let farm = next.mining_farms[player.id];
+      if (!farm) {
+        farm = {
+          location_id: 'default_garage',
+          location_name: 'Garage Personnel',
+          power_capacity_watts: 15000,
+          cooling_type: 'AIR',
+          rigs: []
+        };
+        next.mining_farms[player.id] = farm;
+      }
+
+      // Assign a random condition (wear) between 35% and 75%
+      const initialWear = parseFloat((0.35 + Math.random() * 0.40).toFixed(2));
+      const finalHashrate = Math.floor((item.hashrate_th || 0) * initialWear);
+
+      farm.rigs.push({
+        id: `rig_used_${Date.now()}`,
+        rig_id: `rig_used_${Date.now()}`,
+        name: `[OCCASION] ${item.name} (#${farm.rigs.length + 1})`,
+        type: item.type === 'GPU' ? 'GPU_RTX_4090' : 'ASIC_BITMAIN_S19',
+        bought_from_shop: "eBay Revente d'Occasion",
+        hashrate_th: finalHashrate,
+        watts_consumption: item.watts_consumption || 1000,
+        wear_condition: initialWear,
+        overclocked: false,
+        hardware_id: item.id
+      } as any);
+      successMsg = `Matériel d'occasion ${item.name} (État : ${Math.round(initialWear * 100)}%) acheté et expédié à votre ferme !`;
+    }
+
+    next.logs.unshift({
+      id: `log_buy_used_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: player.id,
+      message: `${player.name} a acheté sur eBay d'occasion '${item.name}' pour ${usedPrice.toLocaleString()} payé EN LIQUIDE.`,
+      status: 'WARN'
+    });
+
+    setPurchaseSuccess(successMsg);
+    setTimeout(() => setPurchaseSuccess(null), 4000);
 
     onUpdateState(next);
   };
@@ -382,14 +482,22 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
           </p>
         </div>
 
-        <div className="flex bg-[#0F0F16] p-1 rounded-lg border border-white/10 font-mono text-xs shrink-0">
+        <div className="flex bg-[#0F0F16] p-1 rounded-lg border border-white/10 font-mono text-xs shrink-0 flex-wrap gap-1">
           <button
             onClick={() => setActiveSubTab('shops')}
             className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
               activeSubTab === 'shops' ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'text-gray-400 hover:text-white'
             }`}
           >
-            <ShoppingBag className="w-3.5 h-3.5" /> Boutique Hardware
+            <ShoppingBag className="w-3.5 h-3.5" /> Boutique Neuve
+          </button>
+          <button
+            onClick={() => setActiveSubTab('ebay_revente')}
+            className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
+              activeSubTab === 'ebay_revente' ? 'bg-red-500/20 text-red-300 font-bold border border-red-500/30' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5 text-red-400" /> eBay Revente (Cash)
           </button>
           <button
             onClick={() => setActiveSubTab('luxury')}
@@ -397,7 +505,7 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
               activeSubTab === 'luxury' ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-gray-400 hover:text-white'
             }`}
           >
-            <Gem className="w-3.5 h-3.5 text-amber-400" /> Loisirs & Objets (Luxe)
+            <Gem className="w-3.5 h-3.5 text-amber-400" /> Prestige & Loisirs
           </button>
           <button
             onClick={() => setActiveSubTab('auctions')}
@@ -510,6 +618,45 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
               </button>
             </div>
 
+            {/* Sort Options Bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#08080C] p-3 rounded-xl border border-white/5 font-mono text-[11px] text-gray-400">
+              <span className="uppercase font-bold text-[10px] text-cyan-400">⚡ Options de tri :</span>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => setSortOption('NONE')}
+                  className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                    sortOption === 'NONE' ? 'text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20' : 'hover:text-white bg-white/5'
+                  }`}
+                >
+                  Par défaut
+                </button>
+                <button
+                  onClick={() => setSortOption('PRICE_ASC')}
+                  className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                    sortOption === 'PRICE_ASC' ? 'text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20' : 'hover:text-white bg-white/5'
+                  }`}
+                >
+                  Prix croissant
+                </button>
+                <button
+                  onClick={() => setSortOption('PRICE_DESC')}
+                  className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                    sortOption === 'PRICE_DESC' ? 'text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20' : 'hover:text-white bg-white/5'
+                  }`}
+                >
+                  Prix décroissant
+                </button>
+                <button
+                  onClick={() => setSortOption('STOCK_DESC')}
+                  className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                    sortOption === 'STOCK_DESC' ? 'text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20' : 'hover:text-white bg-white/5'
+                  }`}
+                >
+                  Disponibilité (En stock)
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {getFilteredHardwareItems().map(item => {
                 const tvaAmount = item.sell_price * state.server_config.tva_rate;
@@ -584,6 +731,139 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
                         }`}
                       >
                         {isOutOfStock ? 'Épuisé' : 'Acheter'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Tab: eBay Revente Clandestine */}
+      {activeSubTab === 'ebay_revente' && (
+        <div className="space-y-6">
+          <div className="bg-[#120F0F] border border-red-500/25 rounded-2xl p-5 space-y-5">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-white/5 pb-4 gap-4">
+              <div>
+                <h3 className="text-base font-bold text-red-400 flex items-center gap-2">
+                  🛠️ eBay Clandestin & Revente d'Occasion (Liquide Uniquement)
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Achetez du matériel usagé ou défectueux à moitié prix. Paiement 100% anonyme en espèces.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono bg-red-500/10 text-red-300 border border-red-500/20 px-2 py-1 rounded shrink-0">
+                Paiement Cash Sale • Pas de TVA déclarée (0%)
+              </span>
+            </div>
+
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-xs text-red-400 space-y-1">
+              <p className="font-bold">⚠️ ATTENTION SUR L'ÉTAT DU MATÉRIEL D'OCCASION :</p>
+              <p className="leading-relaxed">
+                Ces machines proviennent de fermes démantelées ou d'invendus usagés. Elles possèdent un état d'usure initial aléatoire situé entre <span className="font-bold">35% et 75%</span>. Leur hashrate (rendement) sera impacté proportionnellement à leur dégradation. Elles ne bénéficient d'aucune garantie !
+              </p>
+            </div>
+
+            {/* Hardware filter subcategory chips for used items */}
+            <div className="flex flex-wrap gap-1.5 bg-[#0C0808] p-1.5 rounded-xl border border-white/5 font-mono text-[11px]">
+              <button
+                onClick={() => setHardwareFilter('ALL')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  hardwareFilter === 'ALL' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                TOUT ({DETAILED_HARDWARE_ITEMS.length})
+              </button>
+              <button
+                onClick={() => setHardwareFilter('DATACENTER')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  hardwareFilter === 'DATACENTER' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                DATACENTERS
+              </button>
+              <button
+                onClick={() => setHardwareFilter('WORKSTATION')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  hardwareFilter === 'WORKSTATION' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                WORKSTATIONS
+              </button>
+              <button
+                onClick={() => setHardwareFilter('ASIC')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  hardwareFilter === 'ASIC' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                ASICS
+              </button>
+              <button
+                onClick={() => setHardwareFilter('WATERCOOLING')}
+                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                  hardwareFilter === 'WATERCOOLING' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                REFROIDISSEMENT
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {getFilteredHardwareItems().map(item => {
+                const usedPrice = Math.floor(item.sell_price * 0.50);
+                const canAfford = currentPlayer.cash_dirty >= usedPrice;
+
+                return (
+                  <div key={`used_${item.id}`} className="bg-[#0C0808] border border-white/5 rounded-xl p-4.5 space-y-3.5 flex flex-col justify-between hover:border-red-500/30 transition">
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] font-mono text-red-400 font-bold uppercase tracking-wider">{item.type} [DÉGRADÉ]</span>
+                        <span className="text-[10px] font-mono bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded font-bold border border-red-500/20">
+                          Moitié Prix
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white mt-1.5">{item.name}</h4>
+
+                      <p className="text-[10px] text-gray-500 mt-1 italic leading-relaxed">
+                        Occasion reconditionnée sous le manteau.
+                      </p>
+
+                      <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1 bg-red-950/10 p-2.5 rounded border border-red-500/10">
+                        <p className="flex justify-between">
+                          <span>Prix Neuf :</span>
+                          <span className="line-through text-gray-600">${item.sell_price.toLocaleString()}</span>
+                        </p>
+                        <p className="flex justify-between text-red-400 font-bold">
+                          <span>Prix Occasion :</span>
+                          <span>${usedPrice.toLocaleString()}</span>
+                        </p>
+                        <p className="flex justify-between">
+                          <span>Paiement requis :</span>
+                          <span className="text-amber-400 font-bold">CASH (Liquide)</span>
+                        </p>
+                        <p className="flex justify-between text-yellow-500">
+                          <span>État estimé :</span>
+                          <span>35% - 75% aléatoire</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-white font-mono">${usedPrice.toLocaleString()}</p>
+                        <p className="text-[9px] text-gray-500 font-mono">Paiement Espèces</p>
+                      </div>
+                      <button
+                        onClick={() => handleBuyEbayItem(item.id)}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer ${
+                          canAfford
+                            ? 'bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300'
+                            : 'bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed'
+                        }`}
+                      >
+                        Acheter (Cash)
                       </button>
                     </div>
                   </div>
