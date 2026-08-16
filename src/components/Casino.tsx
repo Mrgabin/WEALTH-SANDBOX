@@ -1,17 +1,36 @@
 import React, { useState } from 'react';
 import { FullGlobalState } from '../types/wealth';
-import { Dices, Trophy, Zap, AlertTriangle, Play, RefreshCw, Layers, Sparkles, ShieldAlert, Gift, ShieldCheck, Flame } from 'lucide-react';
+import { Dices, Trophy, Zap, AlertTriangle, Play, RefreshCw, Layers, Sparkles, ShieldAlert, Gift, ShieldCheck, Flame, Coins, Gamepad2, Cpu, Key } from 'lucide-react';
+
+// Import our new modular games
+import { BlackjackGame } from './BlackjackGame';
+import { MinesGame } from './MinesGame';
+import { PlinkoGame } from './PlinkoGame';
+import { HiloGame } from './HiloGame';
+import { SlotsGame } from './SlotsGame';
+import { ShellGame } from './ShellGame';
 
 interface CasinoProps {
   state: FullGlobalState;
   onUpdateState: (newState: FullGlobalState) => void;
 }
 
+type CasinoTab = 
+  | 'roulette' 
+  | 'crash' 
+  | 'mysterybox' 
+  | 'blackjack' 
+  | 'mines' 
+  | 'plinko' 
+  | 'hilo' 
+  | 'slots' 
+  | 'bonneteau';
+
 export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
-  const [activeGame, setActiveGame] = useState<'roulette' | 'crash' | 'mysterybox'>('roulette');
+  const [activeGame, setActiveGame] = useState<CasinoTab>('roulette');
   const currentPlayer = state.players[state.current_player_id] || Object.values(state.players)[0];
 
-  // ---------------- ROULETTE STATE ----------------
+  // ==================== ORIGINAL GAME 1: ROULETTE STATE ====================
   const [rouletteBetAmount, setRouletteBetAmount] = useState<number>(1000);
   const [rouletteBetType, setRouletteBetType] = useState<'RED' | 'BLACK' | 'NUMBER_17'>('RED');
   const [rouletteHistory, setRouletteHistory] = useState<number[]>([17, 32, 15, 0, 26, 3]);
@@ -21,14 +40,13 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
 
   const handleSpinRoulette = () => {
     if (currentPlayer.bank_clean < rouletteBetAmount) {
-      alert("Solde bancaire insuffisant pour parier !");
+      alert("Solde bancaire propre insuffisant pour parier !");
       return;
     }
 
     setRouletteSpinning(true);
     setRouletteFeedback(null);
 
-    // Deduct bet immediately for real-time risk
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
     const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
     player.bank_clean -= rouletteBetAmount;
@@ -86,7 +104,7 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
     }, 1200);
   };
 
-  // ---------------- CRASH GAME STATE ----------------
+  // ==================== ORIGINAL GAME 2: CRASH STATE ====================
   const [crashBetAmount, setCrashBetAmount] = useState<number>(5000);
   const [crashMultiplier, setCrashMultiplier] = useState<number>(1.00);
   const [crashRunning, setCrashRunning] = useState(false);
@@ -100,7 +118,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
       return;
     }
 
-    // Deduct the bet instantly - Casino Security Standard
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
     const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
     player.bank_clean -= crashBetAmount;
@@ -130,7 +147,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
           setCrashRunning(false);
           setCrashed(true);
           
-          // Log crash failure
           const finalState = JSON.parse(JSON.stringify(next)) as FullGlobalState;
           finalState.logs.unshift({
             id: `log_crash_blown_${Date.now()}`,
@@ -162,7 +178,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
     const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
     
-    // Add full win amount because bet was already deducted
     player.bank_clean += winAmount;
 
     next.logs.unshift({
@@ -177,7 +192,7 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
     onUpdateState(next);
   };
 
-  // ---------------- MYSTERY BOXES STATE ----------------
+  // ==================== ORIGINAL GAME 3: MYSTERY BOXES STATE ====================
   const [selectedBox, setSelectedBox] = useState<'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM'>('BRONZE');
   const [riskMultiplier, setRiskMultiplier] = useState<'NONE' | 'X2' | 'X3' | 'X4'>('NONE');
   const [boxFeedback, setBoxFeedback] = useState<{
@@ -233,7 +248,7 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
   const handleOpenBox = () => {
     const boxCost = BOXES[selectedBox].price;
     if (currentPlayer.bank_clean < boxCost) {
-      alert("Solde bancaire insuffisant pour acheter cette boîte !");
+      alert("Solde bancaire propre insuffisant pour acheter cette boîte !");
       return;
     }
 
@@ -244,10 +259,8 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
       const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
       const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
 
-      // Deduct box cost
       player.bank_clean -= boxCost;
 
-      // Risk booster check
       const mod = RISK_MODIFIERS[riskMultiplier];
       let boostPassed = true;
       if (riskMultiplier !== 'NONE') {
@@ -256,7 +269,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
       }
 
       if (!boostPassed) {
-        // Booster failed! Player loses box and gets nothing.
         setBoxFeedback({
           success: false,
           itemName: 'Rien (La boîte a explosé sous l\'effet de la surtension !)',
@@ -279,25 +291,19 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
         return;
       }
 
-      // Successful unboxing (or no boost used)
       const pool = LOOT_POOL[selectedBox];
       const rolledLoot = pool[Math.floor(Math.random() * pool.length)];
 
-      // Scale final value based on boost multiplier
       const finalVal = Math.round(rolledLoot.baseVal * mod.mult);
       const formattedItemName = riskMultiplier !== 'NONE' 
         ? `[Booster ${riskMultiplier}] ${rolledLoot.name}`
         : rolledLoot.name;
 
-      // Initialize possessions if missing
       if (!player.possessions) {
         player.possessions = [];
       }
 
-      // Push to physical possessions collection
       player.possessions.push(`${formattedItemName} ($${finalVal.toLocaleString()})`);
-
-      // Player also gets a portion of the clean bank value as immediate liquid profit
       player.bank_clean += Math.floor(finalVal * 0.4);
 
       setBoxFeedback({
@@ -325,50 +331,99 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
   return (
     <div className="space-y-6">
       {/* Header & Mini-Game Selector */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 border-b border-white/5 pb-5">
         <div>
           <h1 className="text-xl font-bold text-white uppercase tracking-tight flex items-center gap-2">
             <Dices className="w-5 h-5 text-amber-400" />
-            Casino Virtuel & Unboxing Propre
+            Casino & Cyber Mini-Jeux
           </h1>
           <p className="text-xs text-gray-400">
-            Faites prospérer votre fortune légitime ou collectionnez des raretés exclusives via nos algorithmes certifiés.
+            Faites fructifier vos capitaux légitimes sur notre gamme de mini-jeux et simulateurs de haute technologie.
           </p>
         </div>
 
-        <div className="flex bg-[#0F0F16] p-1 rounded-xl border border-white/10 font-mono text-xs flex-wrap gap-1">
+        {/* Dashboard grid for 9 games */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 bg-[#0F0F16] p-1.5 rounded-xl border border-white/10 font-mono text-[10px] gap-1 w-full xl:w-auto">
           <button
             onClick={() => setActiveGame('roulette')}
-            className={`px-3 py-1.5 rounded transition cursor-pointer ${
-              activeGame === 'roulette' ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-gray-400 hover:text-white'
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'roulette' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Roulette (1:1 / 35:1)
+            🎡 Roulette
           </button>
           <button
             onClick={() => setActiveGame('crash')}
-            className={`px-3 py-1.5 rounded transition cursor-pointer ${
-              activeGame === 'crash' ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30' : 'text-gray-400 hover:text-white'
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'crash' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            Fusée Crash (Multiplier)
+            🚀 Crash
           </button>
           <button
             onClick={() => setActiveGame('mysterybox')}
-            className={`px-3 py-1.5 rounded transition cursor-pointer ${
-              activeGame === 'mysterybox' ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30' : 'text-gray-400 hover:text-white'
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'mysterybox' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-[0_0_8px_rgba(168,85,247,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            🎁 Coffres Raretés & Booster
+            🎁 Coffres
+          </button>
+          <button
+            onClick={() => setActiveGame('blackjack')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'blackjack' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🃏 Blackjack
+          </button>
+          <button
+            onClick={() => setActiveGame('mines')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'mines' ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30 shadow-[0_0_8px_rgba(244,63,94,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            💣 Mines
+          </button>
+          <button
+            onClick={() => setActiveGame('plinko')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'plinko' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30 shadow-[0_0_8px_rgba(20,184,166,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🔴 Plinko
+          </button>
+          <button
+            onClick={() => setActiveGame('hilo')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'hilo' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 shadow-[0_0_8px_rgba(234,179,8,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            📈 Hi-Lo
+          </button>
+          <button
+            onClick={() => setActiveGame('slots')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'slots' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🎰 Slots
+          </button>
+          <button
+            onClick={() => setActiveGame('bonneteau')}
+            className={`px-2.5 py-2 rounded font-bold transition cursor-pointer text-center ${
+              activeGame === 'bonneteau' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 shadow-[0_0_8px_rgba(59,130,246,0.15)]' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            🔑 Bonneteau
           </button>
         </div>
       </div>
 
-      {/* GAME 1: ROULETTE */}
+      {/* GAME RENDER ENGINE */}
       {activeGame === 'roulette' && (
-        <div className="bg-[#0F0F16] border border-amber-500/20 rounded-xl p-6 space-y-6 shadow-2xl">
+        <div className="bg-[#0F0F16] border border-amber-500/20 rounded-xl p-6 space-y-6 shadow-2xl font-mono">
           <div className="flex justify-between items-center border-b border-white/5 pb-4">
-            <h3 className="text-sm font-mono font-bold text-amber-400 uppercase tracking-widest flex items-center gap-2">
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-widest flex items-center gap-2">
               <Trophy className="w-4 h-4" /> Roulette Européenne (RTP 97.3%)
             </h3>
             <div className="flex items-center gap-2 font-mono text-xs">
@@ -382,7 +437,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-            {/* Roulette Wheel Visualizer */}
             <div className="bg-[#08080C] p-8 rounded-xl border border-white/5 flex flex-col items-center justify-center space-y-4">
               <div className={`w-32 h-32 rounded-full border-4 border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-red-500/10 flex items-center justify-center font-mono text-3xl font-extrabold text-amber-300 ${rouletteSpinning ? 'animate-spin' : ''}`}>
                 {rouletteResult !== null ? rouletteResult : 'Ω'}
@@ -395,7 +449,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
               )}
             </div>
 
-            {/* Betting Controls */}
             <div className="space-y-4 font-mono text-xs">
               <div>
                 <label className="text-gray-400 text-[10px] uppercase block mb-1">Mise en $ (Banque Propre)</label>
@@ -447,7 +500,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
         </div>
       )}
 
-      {/* GAME 2: CRASH GAME */}
       {activeGame === 'crash' && (
         <div className="bg-[#0F0F16] border border-amber-500/20 rounded-xl p-6 space-y-6 shadow-2xl font-mono">
           <div className="flex justify-between items-center border-b border-white/5 pb-4">
@@ -458,7 +510,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-            {/* Multiplier Display */}
             <div className="bg-[#08080C] p-10 rounded-xl border border-white/5 flex flex-col items-center justify-center space-y-4">
               <span className={`text-6xl font-extrabold tracking-tighter ${crashed ? 'text-red-500 animate-pulse' : cashedOut ? 'text-green-400' : 'text-cyan-400 animate-bounce'}`}>
                 {crashMultiplier.toFixed(2)}x
@@ -476,7 +527,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
               </p>
             </div>
 
-            {/* Controls */}
             <div className="space-y-4 text-xs">
               <div>
                 <label className="text-gray-400 block mb-1">Mise $ (Compte Propre Banque)</label>
@@ -513,7 +563,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
         </div>
       )}
 
-      {/* GAME 3: MYSTERY BOXES & COLLECTION */}
       {activeGame === 'mysterybox' && (
         <div className="space-y-6">
           <div className="bg-[#0F0F16] border border-purple-500/20 rounded-xl p-6 space-y-6 shadow-2xl font-mono">
@@ -528,7 +577,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Box Selector */}
               <div className="space-y-3">
                 <label className="text-gray-400 text-[10px] uppercase block">1. Choisissez un Coffre</label>
                 <div className="space-y-2">
@@ -551,7 +599,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
                 </div>
               </div>
 
-              {/* Risk Modifier */}
               <div className="space-y-3">
                 <label className="text-gray-400 text-[10px] uppercase block">2. Multiplicateur de Risque ("Booster")</label>
                 <div className="space-y-2">
@@ -581,7 +628,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
                 </p>
               </div>
 
-              {/* Unboxing Stage */}
               <div className="bg-[#08080C] p-6 rounded-xl border border-white/5 flex flex-col items-center justify-center space-y-4 relative overflow-hidden">
                 <div className={`w-20 h-20 rounded-3xl border-2 border-dashed flex items-center justify-center ${unboxingActive ? 'animate-bounce border-purple-500/80' : 'border-white/15'}`}>
                   {unboxingActive ? (
@@ -607,7 +653,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
               </div>
             </div>
 
-            {/* Unboxing Feedback */}
             {boxFeedback && (
               <div className={`p-4 rounded-xl border text-center space-y-1.5 animate-fade-in ${
                 boxFeedback.success ? 'bg-green-500/10 border-green-500/20 text-green-300' : 'bg-red-500/10 border-red-500/20 text-red-300'
@@ -638,7 +683,6 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
             )}
           </div>
 
-          {/* Collection Showcase */}
           <div className="bg-[#0A0A0E] border border-white/5 p-5 rounded-xl space-y-3 font-mono">
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
               🏆 Votre Collection d'Objets d'Art, de Luxe et de Pièces rares ({currentPlayer.possessions?.length || 0})
@@ -659,6 +703,31 @@ export const Casino: React.FC<CasinoProps> = ({ state, onUpdateState }) => {
             )}
           </div>
         </div>
+      )}
+
+      {/* NEW RENDERED MODULAR GAMES */}
+      {activeGame === 'blackjack' && (
+        <BlackjackGame state={state} onUpdateState={onUpdateState} />
+      )}
+
+      {activeGame === 'mines' && (
+        <MinesGame state={state} onUpdateState={onUpdateState} />
+      )}
+
+      {activeGame === 'plinko' && (
+        <PlinkoGame state={state} onUpdateState={onUpdateState} />
+      )}
+
+      {activeGame === 'hilo' && (
+        <HiloGame state={state} onUpdateState={onUpdateState} />
+      )}
+
+      {activeGame === 'slots' && (
+        <SlotsGame state={state} onUpdateState={onUpdateState} />
+      )}
+
+      {activeGame === 'bonneteau' && (
+        <ShellGame state={state} onUpdateState={onUpdateState} />
       )}
     </div>
   );

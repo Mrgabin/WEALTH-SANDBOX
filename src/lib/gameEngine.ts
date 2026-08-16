@@ -441,7 +441,7 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
       }
 
       farm.rigs.forEach(rig => {
-        if (rig.shelved) return; // Skip shelved/set-aside hardware
+        if (rig.shelved || rig.listed_for_sale) return; // Skip shelved/listed hardware
 
         // Ensure failure properties are initialized
         if (!rig.failure_type) {
@@ -872,9 +872,10 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
       });
     }
 
-    // 2. Process monthly rents (executed once per month, outside of the player loop)
+    // 2. Process monthly rents & real estate property taxes (executed once per month)
     if (nextState.real_estate_agencies && nextState.real_estate_agencies.length > 0) {
       nextState.real_estate_agencies[0].managed_properties.forEach(prop => {
+        // Rent payment
         if (prop.tenant_id && prop.owner_id && prop.tenant_id !== prop.owner_id) {
           const tenant = nextState.players[prop.tenant_id];
           const owner = nextState.players[prop.owner_id];
@@ -890,8 +891,27 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
               timestamp: nowStr,
               type: 'DB_WRITE',
               uid: tenant.id,
-              message: `LOYER IMMOBILIER : ${tenant.name} a payé un loyer de $${rent.toLocaleString()} à ${owner.name} pour '${prop.name}'`,
+              message: `LOYER IMMOBILIER : ${tenant.name} a payé un loyer de ${rent.toLocaleString()} à ${owner.name} pour '${prop.name}'`,
               status: 'OK'
+            });
+          }
+        }
+
+        // Property Tax (Taxe foncière, 1% of estimated value)
+        if (prop.owner_id) {
+          const owner = nextState.players[prop.owner_id];
+          if (owner) {
+            const propTax = Math.round(prop.estimated_value * 0.01);
+            owner.bank_clean = Math.max(0, owner.bank_clean - propTax);
+            
+            const salt = Math.random().toString(36).substring(2, 6);
+            newLogs.push({
+              id: `log_proptax_${Date.now()}_${prop.property_id}_${salt}`,
+              timestamp: nowStr,
+              type: 'TAX_ISF',
+              uid: owner.id,
+              message: `FISCALITÉ IMMOBILIÈRE : Taxe foncière mensuelle (1%) payée par ${owner.name} pour '${prop.name}' : -${propTax.toLocaleString()}`,
+              status: 'WARN'
             });
           }
         }
@@ -1000,6 +1020,50 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
             severity: 'CRITICAL',
             impactText: `Ils ont fouillé vos poches et volé -${lossAmount.toLocaleString()} de votre Cash Sale.`
           };
+        }
+      }
+
+      // Monthly GPU Resale Market Check (chance of listed rigs to sell)
+      const farm = nextState.mining_farms[player.id];
+      if (farm && farm.rigs && farm.rigs.length > 0) {
+        const soldRigIds: string[] = [];
+        
+        farm.rigs.forEach(rig => {
+          if (rig.listed_for_sale && rig.sale_price) {
+            // Find base hardware estimate based on hashrate
+            const basePrice = rig.hashrate_th > 1000 ? rig.hashrate_th * 3 : rig.hashrate_th * 7;
+            const wear = rig.wear_condition ?? 1.0;
+            const estVal = Math.max(50, basePrice * wear * 0.8);
+            const priceRatio = rig.sale_price / estVal;
+            
+            // Determine percentage chance to sell this monthly tick
+            let sellChance = 0.0;
+            if (priceRatio <= 0.6) sellChance = 0.45;
+            else if (priceRatio <= 0.8) sellChance = 0.30;
+            else if (priceRatio <= 1.0) sellChance = 0.15;
+            else if (priceRatio <= 1.2) sellChance = 0.08;
+            else if (priceRatio <= 1.5) sellChance = 0.03;
+            else sellChance = 0.01;
+            
+            if (Math.random() < sellChance) {
+              soldRigIds.push(rig.rig_id);
+              player.bank_clean += rig.sale_price;
+              
+              const salt = Math.random().toString(36).substring(2, 6);
+              newLogs.push({
+                id: `log_gpu_sold_${Date.now()}_${rig.rig_id}_${salt}`,
+                timestamp: nowStr,
+                type: 'DB_WRITE',
+                uid: player.id,
+                message: `📦 VENTE D'OCCASION : Un acquéreur sur eBay a acheté votre '${rig.name}' d'occasion pour ${rig.sale_price.toLocaleString()} !`,
+                status: 'OK'
+              });
+            }
+          }
+        });
+        
+        if (soldRigIds.length > 0) {
+          farm.rigs = farm.rigs.filter(r => !soldRigIds.includes(r.rig_id));
         }
       }
     });

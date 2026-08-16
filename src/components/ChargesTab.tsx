@@ -40,6 +40,12 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ state, onUpdateState }) 
   // 2. Calculate Shop Taxes
   const totalShopTaxes = playerShops.reduce((sum, shop) => sum + shop.monthly_taxes_due, 0);
 
+  // 2.5. Calculate Property Taxes (Taxe Foncière - 1% of estimated value)
+  const playerProperties = state.real_estate_agencies.flatMap(agency => 
+    agency.managed_properties.filter(p => p.owner_id === player.id)
+  );
+  const totalPropertyTaxes = playerProperties.reduce((sum, p) => sum + p.estimated_value * 0.01, 0);
+
   // 3. Subscriptions Available
   const subscriptionsPool = [
     { 
@@ -333,6 +339,39 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ state, onUpdateState }) 
             </div>
           </div>
 
+          {/* Property Taxes Widget */}
+          <div className="bg-[#0F0F16] border border-white/5 rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-black text-white uppercase tracking-wider border-b border-white/5 pb-2">
+              🏢 TAXE FONCIÈRE (IMMOBILIER & DATA CENTERS)
+            </h3>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Biens possédés :</span>
+                <span className="text-white font-bold">{playerProperties.length}</span>
+              </div>
+
+              {playerProperties.length === 0 ? (
+                <div className="bg-[#08080C] p-3 rounded-lg text-center text-[10px] text-gray-500 border border-white/5">
+                  Aucun local ou data center possédé. Pas de taxe foncière due.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {playerProperties.map(prop => (
+                    <div key={prop.property_id} className="p-2 bg-[#08080C] border border-white/5 rounded flex justify-between text-[10px]">
+                      <span className="text-gray-300 truncate max-w-[150px]">{prop.name}</span>
+                      <span className="text-red-400 font-bold">-${(prop.estimated_value * 0.01).toFixed(0)}/cycle</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-white/5 pt-2 flex justify-between text-xs font-bold text-red-400">
+                    <span>Total Taxe Foncière (1%/cycle) :</span>
+                    <span>-${totalPropertyTaxes.toLocaleString()}/cycle</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Recurrent Charges Summary */}
           <div className="bg-[#0F0F16] border border-white/5 rounded-xl p-5 space-y-4">
             <h3 className="text-sm font-black text-white uppercase tracking-wider border-b border-white/5 pb-2">
@@ -353,6 +392,12 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ state, onUpdateState }) 
                 </span>
               </div>
               <div className="flex justify-between text-gray-400">
+                <span>Taxe Foncière locales</span>
+                <span className={totalPropertyTaxes > 0 ? "text-red-400 font-bold" : "text-gray-500"}>
+                  -${totalPropertyTaxes.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between text-gray-400">
                 <span>Abonnements actifs ({activeSubs.length})</span>
                 {activeSubs.length > 0 ? (
                   <span className="text-red-400 font-bold">
@@ -369,6 +414,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ state, onUpdateState }) 
                   -${(
                     estimatedISF + 
                     totalShopTaxes + 
+                    totalPropertyTaxes +
                     activeSubs.reduce((acc, subId) => acc + (subscriptionsPool.find(s => s.id === subId)?.cost || 0), 0)
                   ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>

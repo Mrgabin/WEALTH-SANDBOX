@@ -534,6 +534,7 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
   }
 
   farm.rigs.forEach(r => {
+    if (r.listed_for_sale) return; // Skip rigs listed for sale
     if (r.wear_condition > 0.05) {
       const oc = r.overclocked ? 1.25 : 1.0;
       

@@ -117,6 +117,8 @@ export interface MiningRig {
   failure_type?: 'NONE' | 'VRAM' | 'PROCESSOR' | 'FAN';
   failure_details?: string; // e.g. "AD102 VRAM défectueuse. Pièce de rechange requise : VRAM_RTX_4090"
   required_spare_part_code?: string; // e.g. "VRAM_RTX_4090" or "PROC_RTX_4090"
+  listed_for_sale?: boolean; // GPU is packed and listed for sale on resale market
+  sale_price?: number; // Listed resale price
 }
 
 export interface MiningFarm {

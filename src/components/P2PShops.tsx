@@ -177,9 +177,11 @@ const LUXURY_PRESTIGE_MARKETPLACE: LuxuryItem[] = [
 ];
 
 export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'shops' | 'ebay_revente' | 'auctions' | 'luxury'>('shops');
+  const [activeSubTab, setActiveSubTab] = useState<'shops' | 'ebay_revente' | 'auctions' | 'luxury' | 'resale'>('shops');
   const [hardwareFilter, setHardwareFilter] = useState<'ALL' | 'DATACENTER' | 'WORKSTATION' | '5000' | '4000' | '3000' | '2000' | 'ASIC' | 'WATERCOOLING'>('ALL');
   const [sortOption, setSortOption] = useState<'NONE' | 'PRICE_ASC' | 'PRICE_DESC' | 'STOCK_DESC'>('NONE');
+  const [showOnlyInStock, setShowOnlyInStock] = useState<boolean>(false);
+  const [listPrices, setListPrices] = useState<Record<string, number>>({});
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
 
   const currentPlayer = state.players[state.current_player_id] || Object.values(state.players)[0];
@@ -209,6 +211,14 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
       }
       return true;
     });
+
+    // Apply in stock only filter
+    if (showOnlyInStock) {
+      items = items.filter(item => {
+        const stock = state.global_hardware_stock ? (state.global_hardware_stock[item.id] ?? 0) : item.stock;
+        return stock > 0;
+      });
+    }
 
     // Apply sorting options
     if (sortOption === 'PRICE_ASC') {
@@ -468,6 +478,58 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
     onUpdateState(next);
   };
 
+  const handleListForSale = (rigId: string, price: number) => {
+    if (price <= 0) {
+      alert("Veuillez entrer un prix de vente valide supérieur à 0 !");
+      return;
+    }
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const farm = next.mining_farms[currentPlayer.id];
+    if (!farm) return;
+    const rig = farm.rigs.find(r => r.rig_id === rigId);
+    if (!rig) return;
+    
+    rig.listed_for_sale = true;
+    rig.sale_price = price;
+    
+    next.logs.unshift({
+      id: `log_list_rig_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: currentPlayer.id,
+      message: `REVENTE : ${currentPlayer.name} a mis en vente '${rig.name}' sur le marché d'occasion pour ${price.toLocaleString()}`,
+      status: 'OK'
+    });
+    
+    onUpdateState(next);
+    setPurchaseSuccess(`Votre matériel '${rig.name}' a été mis en vente pour ${price.toLocaleString()} !`);
+    setTimeout(() => setPurchaseSuccess(null), 4000);
+  };
+
+  const handleCancelSale = (rigId: string) => {
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const farm = next.mining_farms[currentPlayer.id];
+    if (!farm) return;
+    const rig = farm.rigs.find(r => r.rig_id === rigId);
+    if (!rig) return;
+    
+    rig.listed_for_sale = false;
+    rig.sale_price = undefined;
+    
+    next.logs.unshift({
+      id: `log_unlist_rig_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'DB_WRITE',
+      uid: currentPlayer.id,
+      message: `REVENTE : ${currentPlayer.name} a retiré de la vente '${rig.name}'`,
+      status: 'WARN'
+    });
+    
+    onUpdateState(next);
+    setPurchaseSuccess(`Le matériel '${rig.name}' a été retiré de la vente.`);
+    setTimeout(() => setPurchaseSuccess(null), 4000);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header & Sub-Tabs */}
@@ -514,6 +576,14 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
             }`}
           >
             <Gavel className="w-3.5 h-3.5" /> Enchères P2P
+          </button>
+          <button
+            onClick={() => setActiveSubTab('resale')}
+            className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
+              activeSubTab === 'resale' ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5 text-purple-400" /> Revente d'Occasion
           </button>
         </div>
       </div>
@@ -619,9 +689,9 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
             </div>
 
             {/* Sort Options Bar */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-[#08080C] p-3 rounded-xl border border-white/5 font-mono text-[11px] text-gray-400">
-              <span className="uppercase font-bold text-[10px] text-cyan-400">⚡ Options de tri :</span>
-              <div className="flex flex-wrap gap-1">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#08080C] p-3 rounded-xl border border-white/5 font-mono text-[11px] text-gray-400 font-mono">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="uppercase font-bold text-[10px] text-cyan-400 mr-1">⚡ Options de tri :</span>
                 <button
                   onClick={() => setSortOption('NONE')}
                   className={`px-2.5 py-1 rounded transition cursor-pointer ${
@@ -652,9 +722,20 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
                     sortOption === 'STOCK_DESC' ? 'text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20' : 'hover:text-white bg-white/5'
                   }`}
                 >
-                  Disponibilité (En stock)
+                  Disponibilité
                 </button>
               </div>
+
+              {/* Filter: In stock only */}
+              <label className="flex items-center gap-2 cursor-pointer text-cyan-300 hover:text-cyan-200 select-none shrink-0 py-1">
+                <input
+                  type="checkbox"
+                  checked={showOnlyInStock}
+                  onChange={(e) => setShowOnlyInStock(e.target.checked)}
+                  className="rounded border-white/10 bg-black text-cyan-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer accent-cyan-500"
+                />
+                <span>Uniquement en stock</span>
+              </label>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -972,6 +1053,156 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Sub-Tab 5: Resale Market */}
+      {activeSubTab === 'resale' && (
+        <div className="space-y-6">
+          <div className="bg-[#0F0F16] border border-purple-500/25 rounded-2xl p-5 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                📦 Revente de Matériel & Cartes Graphiques d'Occasion
+              </h3>
+              <p className="text-xs text-gray-400 mt-1">
+                Mettez en vente vos rigs de minage inutilisés, vos cartes d'occasion ou ASICs sur le marché d'occasion mondial.
+                Chaque cycle mensuel (toutes les 5 minutes), des acheteurs du monde entier évaluent vos annonces et peuvent acquérir votre matériel selon son usure et son prix de vente !
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Your active listings */}
+            <div className="bg-[#0F0F16]/50 border border-white/5 rounded-2xl p-5 space-y-4">
+              <h4 className="text-sm font-bold text-purple-300 font-mono uppercase tracking-wider border-b border-white/5 pb-2">
+                ⚡ Vos Rigs & Cartes en vente ({ (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => r.listed_for_sale).length })
+              </h4>
+              
+              { (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => r.listed_for_sale).length === 0 ? (
+                <p className="text-xs text-gray-500 font-mono py-4 text-center">Aucun matériel n'est actuellement listé pour la vente.</p>
+              ) : (
+                <div className="space-y-3">
+                  { (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => r.listed_for_sale).map(rig => {
+                    // Estimate approximate sale probability
+                    const basePrice = rig.hashrate_th > 1000 ? rig.hashrate_th * 3 : rig.hashrate_th * 7;
+                    const wear = rig.wear_condition ?? 1.0;
+                    const estVal = Math.max(50, basePrice * wear * 0.8);
+                    const priceRatio = (rig.sale_price || 0) / estVal;
+                    
+                    let sellChanceText = "Très Faible (1%)";
+                    let chanceColor = "text-red-400";
+                    if (priceRatio <= 0.6) {
+                      sellChanceText = "Très Élevée (45%)";
+                      chanceColor = "text-green-400";
+                    } else if (priceRatio <= 0.8) {
+                      sellChanceText = "Élevée (30%)";
+                      chanceColor = "text-green-300";
+                    } else if (priceRatio <= 1.0) {
+                      sellChanceText = "Moyenne (15%)";
+                      chanceColor = "text-cyan-400";
+                    } else if (priceRatio <= 1.2) {
+                      sellChanceText = "Basse (8%)";
+                      chanceColor = "text-amber-400";
+                    } else if (priceRatio <= 1.5) {
+                      sellChanceText = "Très Basse (3%)";
+                      chanceColor = "text-orange-400";
+                    }
+
+                    return (
+                      <div key={rig.rig_id} className="bg-[#08080C] border border-purple-500/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-white font-mono">{rig.name}</p>
+                          <div className="flex gap-2 text-[10px] font-mono text-gray-400">
+                            <span>État : <strong className="text-purple-300">{Math.round(wear * 100)}%</strong></span>
+                            <span>•</span>
+                            <span>Valeur est. : <strong className="text-gray-300">${Math.round(estVal).toLocaleString()}</strong></span>
+                          </div>
+                          <p className="text-[10px] font-mono mt-0.5">
+                            Probabilité de vente / cycle : <span className={`font-bold ${chanceColor}`}>{sellChanceText}</span>
+                          </p>
+                        </div>
+                        <div className="flex sm:flex-col items-end gap-2 shrink-0">
+                          <p className="text-sm font-bold font-mono text-green-400">${(rig.sale_price || 0).toLocaleString()}</p>
+                          <button
+                            onClick={() => handleCancelSale(rig.rig_id)}
+                            className="px-3 py-1.5 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-mono text-xs font-bold transition cursor-pointer"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Right: Available to sell */}
+            <div className="bg-[#0F0F16]/50 border border-white/5 rounded-2xl p-5 space-y-4">
+              <h4 className="text-sm font-bold text-cyan-300 font-mono uppercase tracking-wider border-b border-white/5 pb-2">
+                📦 Vos Rigs Disponibles pour Revente ({ (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => !r.listed_for_sale).length })
+              </h4>
+
+              { (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => !r.listed_for_sale).length === 0 ? (
+                <p className="text-xs text-gray-500 font-mono py-4 text-center">Vous n'avez aucun matériel disponible pour la vente (tous déjà listés ou aucun possédé).</p>
+              ) : (
+                <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                  { (state.mining_farms[currentPlayer.id]?.rigs || []).filter(r => !r.listed_for_sale).map(rig => {
+                    const basePrice = rig.hashrate_th > 1000 ? rig.hashrate_th * 3 : rig.hashrate_th * 7;
+                    const wear = rig.wear_condition ?? 1.0;
+                    const estVal = Math.round(Math.max(50, basePrice * wear * 0.8));
+
+                    return (
+                      <div key={rig.rig_id} className="bg-[#08080C] border border-white/5 rounded-xl p-4 space-y-3.5">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-xs font-bold text-white font-mono">{rig.name}</p>
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                              Hashrate: {rig.hashrate_th} TH/s | Conso: {rig.watts_consumption}W
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                            wear > 0.8 ? 'bg-green-500/10 text-green-400' : wear > 0.5 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
+                          }`}>
+                            État : {Math.round(wear * 100)}%
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1 border-t border-white/5">
+                          <div className="font-mono text-[11px] text-gray-400">
+                            <span className="text-gray-500">Valeur d'occasion estimée : </span>
+                            <span className="text-cyan-400 font-bold">${estVal.toLocaleString()}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-28">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-[10px]">$</span>
+                              <input
+                                type="number"
+                                placeholder={estVal.toString()}
+                                value={listPrices[rig.rig_id] ?? ""}
+                                onChange={(e) => setListPrices({
+                                  ...listPrices,
+                                  [rig.rig_id]: parseFloat(e.target.value) || 0
+                                })}
+                                className="w-full bg-black/40 border border-white/10 rounded pl-5 pr-1 py-1 font-mono text-[11px] text-white focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleListForSale(rig.rig_id, listPrices[rig.rig_id] || estVal)}
+                              className="px-2.5 py-1 rounded bg-purple-500/20 hover:bg-purple-500/35 border border-purple-500/40 text-purple-300 font-mono font-bold text-[11px] transition cursor-pointer shrink-0"
+                            >
+                              Mettre en vente
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

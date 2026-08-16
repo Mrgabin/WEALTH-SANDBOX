@@ -291,17 +291,37 @@ export const RealEstate: React.FC<RealEstateProps> = ({ state, onUpdateState }) 
   };
 
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [sortOption, setSortOption] = useState<'NONE' | 'PRICE_ASC' | 'PRICE_DESC'>('NONE');
+  const [showOnlyNotOwned, setShowOnlyNotOwned] = useState<boolean>(false);
 
-  const filteredProperties = availablePropertiesForSale.filter(prop => {
-    if (filterType === 'ALL') return true;
-    if (filterType === 'STANDARD') return ['GARAGE', 'HANGAR', 'DATA_CENTER'].includes(prop.type);
-    if (filterType === 'FRANCHISE') return prop.type === 'AGENCY_FRANCHISE' || prop.type === 'ADMIN_BIENS';
-    if (filterType === 'MANDATAIRE') return prop.type === 'MANDATAIRE';
-    if (filterType === 'PRESTIGE') return prop.type === 'PRESTIGE';
-    if (filterType === 'FONCIERE') return prop.type === 'FONCIERE' || prop.type === 'LOGISTIQUE';
-    if (filterType === 'SCPI') return prop.type === 'SCPI';
-    return true;
-  });
+  const myProperties = state.real_estate_agencies.flatMap(agency => 
+    agency.managed_properties.filter(p => p.owner_id === currentPlayer.id)
+  );
+
+  const getFilteredProperties = () => {
+    let items = availablePropertiesForSale.filter(prop => {
+      if (filterType === 'ALL') return true;
+      if (filterType === 'STANDARD') return ['GARAGE', 'HANGAR', 'DATA_CENTER'].includes(prop.type);
+      if (filterType === 'FRANCHISE') return prop.type === 'AGENCY_FRANCHISE' || prop.type === 'ADMIN_BIENS';
+      if (filterType === 'MANDATAIRE') return prop.type === 'MANDATAIRE';
+      if (filterType === 'PRESTIGE') return prop.type === 'PRESTIGE';
+      if (filterType === 'FONCIERE') return prop.type === 'FONCIERE' || prop.type === 'LOGISTIQUE';
+      if (filterType === 'SCPI') return prop.type === 'SCPI';
+      return true;
+    });
+
+    if (showOnlyNotOwned) {
+      items = items.filter(prop => !myProperties.some(p => p.name === prop.name));
+    }
+
+    if (sortOption === 'PRICE_ASC') {
+      items = [...items].sort((a, b) => a.estimated_value - b.estimated_value);
+    } else if (sortOption === 'PRICE_DESC') {
+      items = [...items].sort((a, b) => b.estimated_value - a.estimated_value);
+    }
+
+    return items;
+  };
 
   const getIconForType = (type: ManagedProperty['type']) => {
     switch (type) {
@@ -329,6 +349,74 @@ export const RealEstate: React.FC<RealEstateProps> = ({ state, onUpdateState }) 
         <p className="text-xs text-gray-400">
           Achetez des locaux pour vos fermes de minage ou percevez des loyers et commissions d'agences.
         </p>
+      </div>
+
+      {/* SECTION: VOS BIENS & BOUTIQUES POSSÉDÉS */}
+      <div className="bg-[#0F0F16] border border-cyan-500/15 rounded-2xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-white/5 pb-2.5 font-mono">
+          <h3 className="text-xs font-bold text-cyan-300 font-mono uppercase tracking-wider flex items-center gap-2">
+            🏢 VOS BIENS IMMOBILIERS POSSÉDÉS ({myProperties.length})
+          </h3>
+          <span className="text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-2 py-0.5 rounded uppercase font-bold">
+            PATRIMOINE IMMOBILIER
+          </span>
+        </div>
+
+        {myProperties.length === 0 ? (
+          <div className="py-4 text-center space-y-1">
+            <p className="text-xs text-gray-400 font-mono">Vous ne possédez aucun bien immobilier ou commerce pour le moment.</p>
+            <p className="text-[10px] text-gray-500 max-w-md mx-auto">
+              Achetez des locaux ci-dessous (Garages, Hangars, Data Centers) pour y installer vos machines de minage, ou des franchises pour générer des revenus passifs.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myProperties.map((p) => {
+              const annualRent = p.rent_monthly * 12;
+              const yieldRate = (annualRent / p.estimated_value) * 100;
+
+              return (
+                <div key={p.property_id} className="bg-[#08080C] border border-white/5 rounded-xl p-4 space-y-3 hover:border-cyan-500/20 transition">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-lg bg-white/5 border border-white/10">
+                        {getIconForType(p.type)}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white font-mono">{p.name}</h4>
+                        <p className="text-[9px] text-gray-500 font-mono">ID: {p.property_id}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-mono pt-2 border-t border-white/5 text-gray-400">
+                    <div className="bg-[#0F0F16]/50 p-2 rounded border border-white/5 space-y-0.5">
+                      <span className="text-gray-500 block uppercase text-[8px]">Rendement</span>
+                      <span className="text-green-400 font-bold">{yieldRate.toFixed(1)}% / an</span>
+                    </div>
+                    <div className="bg-[#0F0F16]/50 p-2 rounded border border-white/5 space-y-0.5">
+                      <span className="text-gray-500 block uppercase text-[8px]">Loyer Mensuel</span>
+                      <span className="text-green-300 font-bold">${p.rent_monthly.toLocaleString()}</span>
+                    </div>
+                    <div className="bg-[#0F0F16]/50 p-2 rounded border border-white/5 space-y-0.5">
+                      <span className="text-gray-500 block uppercase text-[8px]">Capacité Élec</span>
+                      <span className="text-amber-400 font-bold">{p.power_capacity_kw} kW</span>
+                    </div>
+                    <div className="bg-[#0F0F16]/50 p-2 rounded border border-white/5 space-y-0.5">
+                      <span className="text-gray-500 block uppercase text-[8px]">Taxe Foncière</span>
+                      <span className="text-red-400 font-bold">-${(p.estimated_value * 0.01).toFixed(0)}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-between items-center text-[10px] font-mono border-t border-white/5">
+                    <span className="text-gray-500">Valeur estimée :</span>
+                    <span className="text-white font-bold">${p.estimated_value.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Available Properties for Sale */}
@@ -399,13 +487,13 @@ export const RealEstate: React.FC<RealEstateProps> = ({ state, onUpdateState }) 
           </div>
         </div>
 
-        {filteredProperties.length === 0 ? (
+        {getFilteredProperties().length === 0 ? (
           <div className="bg-[#0F0F16] border border-white/5 rounded-xl p-8 text-center text-gray-500 font-mono text-xs">
-            Aucun bien immobilier disponible dans cette catégorie.
+            Aucun bien immobilier disponible dans cette catégorie ou correspondant à vos critères de recherche.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {filteredProperties.map((prop, idx) => {
+            {getFilteredProperties().map((prop, idx) => {
               const mutation = prop.estimated_value * 0.08;
               const total = prop.estimated_value + mutation;
 
