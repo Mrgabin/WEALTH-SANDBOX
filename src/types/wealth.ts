@@ -75,6 +75,7 @@ export interface PlayerShopItem {
   stock: number;
   hashrate_th?: number;
   watts_consumption?: number;
+  description?: string;
 }
 
 export interface PlayerShop {

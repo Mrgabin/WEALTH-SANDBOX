@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FullGlobalState, PlayerShopItem } from '../types/wealth';
-import { ShoppingBag, Gavel, Gem, Check, Info, ShieldAlert } from 'lucide-react';
+import { ShoppingBag, Gavel, Gem, Check, Info, ShieldAlert, Search } from 'lucide-react';
 
 interface P2PShopsProps {
   state: FullGlobalState;
@@ -108,6 +108,33 @@ const DETAILED_HARDWARE_ITEMS: PlayerShopItem[] = [
   { id: 'wc_custom_barrow_bykski', item_code: 'WC_CUSTOM_BARROW_BYKSKI', name: 'Barrow & Bykski Affordable Custom Loop', type: 'WATERCOOLING', buy_cost: 280.00, sell_price: 340.00, stock: 15 }
 ];
 
+const ATELIER_SPARE_PARTS: PlayerShopItem[] = [
+  { id: 'part_vram_rtx_5090', item_code: 'VRAM_RTX_5090', name: 'VRAM Dédiée RTX 5090 (32GB GDDR7)', type: 'CHIP', buy_cost: 450, sell_price: 450, stock: 99, description: 'Puces de mémoire GDDR7 Samsung haute densité, spécifiques au PCB RTX 5090.' },
+  { id: 'part_proc_rtx_5090', item_code: 'PROC_RTX_5090', name: 'GPU Core Dédié RTX 5090 (Silicon Chip)', type: 'CHIP', buy_cost: 650, sell_price: 650, stock: 99, description: 'Processeur central AD102 calibré pour supporter les charges et overclocks extrêmes.' },
+  { id: 'part_fan_rtx_5090', item_code: 'FAN_RTX_5090', name: 'Module Triple Fan RTX 5090', type: 'RIG_CASE', buy_cost: 180, sell_price: 180, stock: 99, description: 'Châssis de ventilation tri-fan de rechange avec roulements lubrifiés.' },
+
+  { id: 'part_vram_rtx_4090', item_code: 'VRAM_RTX_4090', name: 'VRAM Dédiée RTX 4090 (24GB GDDR6X)', type: 'CHIP', buy_cost: 380, sell_price: 380, stock: 99, description: 'Mémoire GDDR6X Micron de haute précision.' },
+  { id: 'part_proc_rtx_4090', item_code: 'PROC_RTX_4090', name: 'GPU Core Dédié RTX 4090 (Silicon Chip)', type: 'CHIP', buy_cost: 550, sell_price: 550, stock: 99, description: 'Processeur AD102 d\'origine certifiée NVIDIA.' },
+  { id: 'part_fan_rtx_4090', item_code: 'FAN_RTX_4090', name: 'Module Dual-Fan RTX 4090', type: 'RIG_CASE', buy_cost: 150, sell_price: 150, stock: 99, description: 'Double turbine fluidodynamique pour refroidissement continu.' },
+
+  { id: 'part_vram_rtx_3090', item_code: 'VRAM_RTX_3090', name: 'VRAM Dédiée RTX 3090 (24GB GDDR6X)', type: 'CHIP', buy_cost: 250, sell_price: 250, stock: 99, description: 'Puces GDDR6X haute vitesse.' },
+  { id: 'part_proc_rtx_3090', item_code: 'PROC_RTX_3090', name: 'GPU Core Dédié RTX 3090', type: 'CHIP', buy_cost: 350, sell_price: 350, stock: 99, description: 'Processeur GA102 pour architectures Ampere.' },
+  { id: 'part_fan_rtx_3090', item_code: 'FAN_RTX_3090', name: 'Module Fan Standard RTX 3090', type: 'RIG_CASE', buy_cost: 100, sell_price: 100, stock: 99, description: 'Turbine silencieuse pour refroidissement standard.' },
+
+  { id: 'part_vram_rtx_4070', item_code: 'VRAM_RTX_4070', name: 'VRAM Dédiée RTX 4070 (12GB GDDR6X)', type: 'CHIP', buy_cost: 150, sell_price: 150, stock: 99, description: 'Modules mémoire GDDR6X de précision.' },
+  { id: 'part_proc_rtx_4070', item_code: 'PROC_RTX_4070', name: 'GPU Core Dédié RTX 4070', type: 'CHIP', buy_cost: 220, sell_price: 220, stock: 99, description: 'Processeur AD104 optimisé.' },
+  { id: 'part_fan_rtx_4070', item_code: 'FAN_RTX_4070', name: 'Module Fan Dual RTX 4070', type: 'RIG_CASE', buy_cost: 80, sell_price: 80, stock: 99, description: 'Double hélice plastique standard.' },
+
+  { id: 'part_vram_asic', item_code: 'VRAM_ASIC', name: 'Puce Mémoire Industrielle ASIC', type: 'CHIP', buy_cost: 300, sell_price: 300, stock: 99, description: 'Mémoire ultra-endurante pour modules de hachage ASIC.' },
+  { id: 'part_proc_asic', item_code: 'PROC_ASIC', name: 'Processeur BM1398 Antminer S19 XP', type: 'CHIP', buy_cost: 800, sell_price: 800, stock: 99, description: 'Cerveau de calcul haute performance pour mineurs industriels ASIC Bitmain.' },
+  { id: 'part_fan_asic', item_code: 'FAN_ASIC', name: 'Ventilateur Industriel 120mm ASIC', type: 'RIG_CASE', buy_cost: 200, sell_price: 200, stock: 99, description: 'Ventilation à haute pression statique soufflant à plus de 6000 RPM.' }
+];
+
+const COMBINED_HARDWARE_ITEMS: PlayerShopItem[] = [
+  ...DETAILED_HARDWARE_ITEMS,
+  ...ATELIER_SPARE_PARTS
+];
+
 // Luxury prestige items matching "loisirs et objets qui ne servent à rien aux achats tomber beaucoup plus dans mes 150 (montres, avions, voitures)"
 interface LuxuryItem {
   id: string;
@@ -178,7 +205,8 @@ const LUXURY_PRESTIGE_MARKETPLACE: LuxuryItem[] = [
 
 export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
   const [activeSubTab, setActiveSubTab] = useState<'shops' | 'ebay_revente' | 'auctions' | 'luxury' | 'resale'>('shops');
-  const [hardwareFilter, setHardwareFilter] = useState<'ALL' | 'DATACENTER' | 'WORKSTATION' | '5000' | '4000' | '3000' | '2000' | 'ASIC' | 'WATERCOOLING'>('ALL');
+  const [hardwareFilter, setHardwareFilter] = useState<'ALL' | 'DATACENTERS' | 'GPUS' | 'PROCESSORS' | 'OTHER'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortOption, setSortOption] = useState<'NONE' | 'PRICE_ASC' | 'PRICE_DESC' | 'STOCK_DESC'>('NONE');
   const [showOnlyInStock, setShowOnlyInStock] = useState<boolean>(false);
   const [listPrices, setListPrices] = useState<Record<string, number>>({});
@@ -187,30 +215,39 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
   const currentPlayer = state.players[state.current_player_id] || Object.values(state.players)[0];
 
   const getFilteredHardwareItems = () => {
-    let items = DETAILED_HARDWARE_ITEMS.filter(item => {
-      if (hardwareFilter === 'ALL') return true;
-      if (hardwareFilter === 'ASIC') return item.type === 'ASIC';
-      if (hardwareFilter === 'WATERCOOLING') return item.type === 'WATERCOOLING';
-      if (hardwareFilter === 'DATACENTER') {
-        return ['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id);
-      }
-      if (hardwareFilter === 'WORKSTATION') {
-        return ['gpu_rtx_6000_ada', 'gpu_w7900', 'gpu_rtx_a6000', 'gpu_rtx_8000'].includes(item.id);
-      }
-      if (hardwareFilter === '5000') {
-        return item.id.startsWith('gpu_rtx_50');
-      }
-      if (hardwareFilter === '4000') {
-        return item.id.startsWith('gpu_rtx_40') || item.id === 'gpu_rx_7900xtx';
-      }
-      if (hardwareFilter === '3000') {
-        return item.id.startsWith('gpu_rtx_30') || item.id === 'gpu_rx_6900xt';
-      }
-      if (hardwareFilter === '2000') {
-        return item.id.startsWith('gpu_rtx_20') || item.id === 'gpu_titan_rtx';
-      }
-      return true;
-    });
+    let items = COMBINED_HARDWARE_ITEMS;
+
+    // Apply category tabs
+    if (hardwareFilter === 'DATACENTERS') {
+      items = items.filter(item => 
+        ['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)
+      );
+    } else if (hardwareFilter === 'GPUS') {
+      items = items.filter(item => 
+        (item.type === 'GPU' || item.type === 'ASIC') && 
+        !['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)
+      );
+    } else if (hardwareFilter === 'PROCESSORS') {
+      items = items.filter(item => 
+        item.item_code.startsWith('PROC_')
+      );
+    } else if (hardwareFilter === 'OTHER') {
+      items = items.filter(item => 
+        item.type === 'WATERCOOLING' || 
+        item.item_code.startsWith('VRAM_') || 
+        item.item_code.startsWith('FAN_')
+      );
+    }
+
+    // Apply live search query
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      items = items.filter(item => 
+        item.name.toLowerCase().includes(query) || 
+        item.item_code.toLowerCase().includes(query) ||
+        (item.type && item.type.toLowerCase().includes(query))
+      );
+    }
 
     // Apply in stock only filter
     if (showOnlyInStock) {
@@ -244,7 +281,7 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
   const handleBuyShopItem = (itemId: string) => {
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
     const player = next.players[next.current_player_id];
-    const item = DETAILED_HARDWARE_ITEMS.find(i => i.id === itemId);
+    const item = COMBINED_HARDWARE_ITEMS.find(i => i.id === itemId);
     if (!item) return;
 
     // Get current stock from state
@@ -272,7 +309,13 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
     next.global_hardware_stock[itemId] = currentStock - 1;
 
     let successMsg = "";
-    if (item.type === 'WATERCOOLING') {
+    if (item.id.startsWith('part_')) {
+      if (!player.possessions) {
+        player.possessions = [];
+      }
+      player.possessions.push(`spare_part:${item.item_code}`);
+      successMsg = `Pièce détachée ${item.name} achetée ! Retrouvez-la dans votre Établi sous 'Minage Crypto' pour réparer vos cartes.`;
+    } else if (item.type === 'WATERCOOLING') {
       if (!player.cooling_inventory) {
         player.cooling_inventory = [];
       }
@@ -312,7 +355,7 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `${player.name} a acheté le matériel de minage ${item.name} pour $${totalPrice.toLocaleString()} (Stock restant : ${currentStock - 1})`,
+      message: `${player.name} a acheté le matériel ${item.name} pour $${totalPrice.toLocaleString()} (Stock restant : ${currentStock - 1})`,
       status: 'OK'
     });
 
@@ -326,7 +369,7 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
   const handleBuyEbayItem = (itemId: string) => {
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
     const player = next.players[next.current_player_id];
-    const item = DETAILED_HARDWARE_ITEMS.find(i => i.id === itemId);
+    const item = COMBINED_HARDWARE_ITEMS.find(i => i.id === itemId);
     if (!item) return;
 
     // Used price is 50% of original sell_price
@@ -341,7 +384,13 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
     player.cash_dirty -= usedPrice;
 
     let successMsg = "";
-    if (item.type === 'WATERCOOLING') {
+    if (item.id.startsWith('part_')) {
+      if (!player.possessions) {
+        player.possessions = [];
+      }
+      player.possessions.push(`spare_part:${item.item_code}`);
+      successMsg = `Pièce d'occasion ${item.name} achetée en liquide ! Retrouvez-la dans votre Établi.`;
+    } else if (item.type === 'WATERCOOLING') {
       if (!player.cooling_inventory) {
         player.cooling_inventory = [];
       }
@@ -612,80 +661,69 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
               </span>
             </div>
 
-            {/* Hardware filter subcategory chips */}
-            <div className="flex flex-wrap gap-1.5 bg-[#08080C] p-1.5 rounded-xl border border-white/5 font-mono text-[11px]">
-              <button
-                onClick={() => setHardwareFilter('ALL')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'ALL' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                TOUT ({DETAILED_HARDWARE_ITEMS.length})
-              </button>
-              <button
-                onClick={() => setHardwareFilter('DATACENTER')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'DATACENTER' ? 'bg-purple-500/15 text-purple-300 border border-purple-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                DATACENTERS (IA)
-              </button>
-              <button
-                onClick={() => setHardwareFilter('WORKSTATION')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'WORKSTATION' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                STATIONS PRO
-              </button>
-              <button
-                onClick={() => setHardwareFilter('5000')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === '5000' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                RTX SÉRIE 5000
-              </button>
-              <button
-                onClick={() => setHardwareFilter('4000')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === '4000' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                RTX SÉRIE 4000
-              </button>
-              <button
-                onClick={() => setHardwareFilter('3000')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === '3000' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                RTX SÉRIE 3000
-              </button>
-              <button
-                onClick={() => setHardwareFilter('2000')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === '2000' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                RTX SÉRIE 2000
-              </button>
-              <button
-                onClick={() => setHardwareFilter('ASIC')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'ASIC' ? 'bg-green-500/15 text-green-300 border border-green-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                ASICS
-              </button>
-              <button
-                onClick={() => setHardwareFilter('WATERCOOLING')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'WATERCOOLING' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                REFROIDISSEMENT
-              </button>
+            {/* Barre de Recherche et Filtres */}
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-cyan-400" />
+                <input
+                  type="text"
+                  placeholder="🔍 Rechercher un matériel (ex: 5090, processeur, ventilateur, rack)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-[#08080C] border border-cyan-500/30 rounded-xl py-2 pl-10 pr-10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-mono transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-2 text-gray-500 hover:text-white text-sm"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 bg-[#08080C] p-1.5 rounded-xl border border-white/5 font-mono text-[11px]">
+                <button
+                  onClick={() => setHardwareFilter('ALL')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'ALL' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  TOUT ({COMBINED_HARDWARE_ITEMS.length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('DATACENTERS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'DATACENTERS' ? 'bg-purple-500/15 text-purple-300 border border-purple-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🚀 RACKS & DATA CENTERS ({COMBINED_HARDWARE_ITEMS.filter(item => ['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('GPUS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'GPUS' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🎮 CARTES GRAPHIQUES & ASICS ({COMBINED_HARDWARE_ITEMS.filter(item => (item.type === 'GPU' || item.type === 'ASIC') && !['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('PROCESSORS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'PROCESSORS' ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🧠 PROCESSEURS & CORES ({COMBINED_HARDWARE_ITEMS.filter(item => item.item_code.startsWith('PROC_')).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('OTHER')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'OTHER' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  ⚙️ COMPOSANTS & RECHANGES ({COMBINED_HARDWARE_ITEMS.filter(item => item.type === 'WATERCOOLING' || item.item_code.startsWith('VRAM_') || item.item_code.startsWith('FAN_')).length})
+                </button>
+              </div>
             </div>
 
             {/* Sort Options Bar */}
@@ -760,7 +798,13 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
                       </div>
                       <h4 className="text-sm font-bold text-white mt-1.5">{item.name}</h4>
 
-                      {item.type === 'WATERCOOLING' ? (
+                      {item.id.startsWith('part_') ? (
+                        <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1.5 bg-purple-950/25 p-2.5 rounded border border-purple-500/20">
+                          <p className="text-purple-300 font-bold text-[10px] uppercase tracking-wider">🛠️ Pièce de Rechange d'Établi</p>
+                          <p className="text-gray-300 text-[11px] leading-relaxed">{item.description}</p>
+                          <p className="text-purple-400 font-bold text-[10px] mt-1">✓ Usage : Onglet 'Minage' &gt; Établi de Réparation</p>
+                        </div>
+                      ) : item.type === 'WATERCOOLING' ? (
                         <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1 bg-cyan-950/20 p-2.5 rounded border border-cyan-500/10">
                           <p className="flex justify-between text-cyan-300">
                             <span>Type:</span>
@@ -847,48 +891,69 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
               </p>
             </div>
 
-            {/* Hardware filter subcategory chips for used items */}
-            <div className="flex flex-wrap gap-1.5 bg-[#0C0808] p-1.5 rounded-xl border border-white/5 font-mono text-[11px]">
-              <button
-                onClick={() => setHardwareFilter('ALL')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'ALL' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                TOUT ({DETAILED_HARDWARE_ITEMS.length})
-              </button>
-              <button
-                onClick={() => setHardwareFilter('DATACENTER')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'DATACENTER' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                DATACENTERS
-              </button>
-              <button
-                onClick={() => setHardwareFilter('WORKSTATION')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'WORKSTATION' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                WORKSTATIONS
-              </button>
-              <button
-                onClick={() => setHardwareFilter('ASIC')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'ASIC' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                ASICS
-              </button>
-              <button
-                onClick={() => setHardwareFilter('WATERCOOLING')}
-                className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                  hardwareFilter === 'WATERCOOLING' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                REFROIDISSEMENT
-              </button>
+            {/* Barre de Recherche et Filtres */}
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-red-400" />
+                <input
+                  type="text"
+                  placeholder="🔍 Rechercher un matériel d'occasion (ex: 5090, processeur, ventilateur)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-[#0C0808] border border-red-500/30 rounded-xl py-2 pl-10 pr-10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 font-mono transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-2 text-gray-500 hover:text-white text-sm"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 bg-[#0C0808] p-1.5 rounded-xl border border-white/5 font-mono text-[11px]">
+                <button
+                  onClick={() => setHardwareFilter('ALL')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'ALL' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  TOUT ({COMBINED_HARDWARE_ITEMS.length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('DATACENTERS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'DATACENTERS' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🚀 RACKS & DATA CENTERS ({COMBINED_HARDWARE_ITEMS.filter(item => ['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('GPUS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'GPUS' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🎮 CARTES GRAPHIQUES & ASICS ({COMBINED_HARDWARE_ITEMS.filter(item => (item.type === 'GPU' || item.type === 'ASIC') && !['gpu_gb200_nvl72', 'gpu_b200', 'gpu_mi300x', 'gpu_h200', 'gpu_h100'].includes(item.id)).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('PROCESSORS')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'PROCESSORS' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  🧠 PROCESSEURS & CORES ({COMBINED_HARDWARE_ITEMS.filter(item => item.item_code.startsWith('PROC_')).length})
+                </button>
+                <button
+                  onClick={() => setHardwareFilter('OTHER')}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    hardwareFilter === 'OTHER' ? 'bg-red-500/15 text-red-300 border border-red-500/25' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  ⚙️ COMPOSANTS & RECHANGES ({COMBINED_HARDWARE_ITEMS.filter(item => item.type === 'WATERCOOLING' || item.item_code.startsWith('VRAM_') || item.item_code.startsWith('FAN_')).length})
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -911,24 +976,36 @@ export const P2PShops: React.FC<P2PShopsProps> = ({ state, onUpdateState }) => {
                         Occasion reconditionnée sous le manteau.
                       </p>
 
-                      <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1 bg-red-950/10 p-2.5 rounded border border-red-500/10">
-                        <p className="flex justify-between">
-                          <span>Prix Neuf :</span>
-                          <span className="line-through text-gray-600">${item.sell_price.toLocaleString()}</span>
-                        </p>
-                        <p className="flex justify-between text-red-400 font-bold">
-                          <span>Prix Occasion :</span>
-                          <span>${usedPrice.toLocaleString()}</span>
-                        </p>
-                        <p className="flex justify-between">
-                          <span>Paiement requis :</span>
-                          <span className="text-amber-400 font-bold">CASH (Liquide)</span>
-                        </p>
-                        <p className="flex justify-between text-yellow-500">
-                          <span>État estimé :</span>
-                          <span>35% - 75% aléatoire</span>
-                        </p>
-                      </div>
+                      {item.id.startsWith('part_') ? (
+                        <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1.5 bg-red-950/20 p-2.5 rounded border border-red-500/20">
+                          <p className="text-red-300 font-bold text-[10px] uppercase tracking-wider">🛠️ Pièce détachée d'Occasion</p>
+                          <p className="text-gray-300 text-[11px] leading-relaxed">{item.description}</p>
+                          <p className="text-red-400 font-bold text-[10px] mt-1">✓ Usage : Minage &gt; Établi de Réparation</p>
+                          <p className="flex justify-between text-yellow-500 mt-1">
+                            <span>Prix Occasion :</span>
+                            <span>${usedPrice.toLocaleString()} (Espèces)</span>
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-2.5 font-mono text-[11px] text-gray-400 space-y-1 bg-red-950/10 p-2.5 rounded border border-red-500/10">
+                          <p className="flex justify-between">
+                            <span>Prix Neuf :</span>
+                            <span className="line-through text-gray-600">${item.sell_price.toLocaleString()}</span>
+                          </p>
+                          <p className="flex justify-between text-red-400 font-bold">
+                            <span>Prix Occasion :</span>
+                            <span>${usedPrice.toLocaleString()}</span>
+                          </p>
+                          <p className="flex justify-between">
+                            <span>Paiement requis :</span>
+                            <span className="text-amber-400 font-bold">CASH (Liquide)</span>
+                          </p>
+                          <p className="flex justify-between text-yellow-500">
+                            <span>État estimé :</span>
+                            <span>35% - 75% aléatoire</span>
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-2 border-t border-white/5 flex items-center justify-between">
