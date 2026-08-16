@@ -113,6 +113,10 @@ export interface MiningRig {
   overclocked: boolean;
   assigned_cooler?: string; // ID of assigned cooler (e.g., wc_arctic_lf3_240)
   shelved?: boolean; // Set aside/remisée, doesn't consume power or produce hash
+  // Component failures
+  failure_type?: 'NONE' | 'VRAM' | 'PROCESSOR' | 'FAN';
+  failure_details?: string; // e.g. "AD102 VRAM défectueuse. Pièce de rechange requise : VRAM_RTX_4090"
+  required_spare_part_code?: string; // e.g. "VRAM_RTX_4090" or "PROC_RTX_4090"
 }
 
 export interface MiningFarm {
@@ -122,6 +126,9 @@ export interface MiningFarm {
   cooling_type: 'AIR' | 'LIQUID';
   rigs: MiningRig[];
   power_upgrade_kw?: number; // Total purchased grid power upgrades in kW
+  // Datacenter-specific failures
+  datacenter_failure_type?: 'NONE' | 'SWITCH_FAILURE' | 'HVAC_FAILURE' | 'TRANSFORMER_BLOWN';
+  datacenter_failure_details?: string;
 }
 
 export interface AuctionItem {
@@ -136,6 +143,8 @@ export interface AuctionItem {
   highest_bidder_id?: string;
   highest_bidder_name?: string;
   expires_in_ticks: number;
+  is_second_hand?: boolean; // true if used/occasion
+  wear_condition?: number; // 0.0 - 1.0 condition remaining
 }
 
 export interface LoanRecord {

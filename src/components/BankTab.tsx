@@ -29,7 +29,7 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
     }
 
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
-    const player = next.players[next.current_player_id];
+    const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
 
     // Deduct cash dirty
     player.cash_dirty -= amount;
@@ -120,7 +120,7 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
     }
 
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
-    const player = next.players[next.current_player_id];
+    const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
 
     player.bank_clean -= amount;
     player.cash_dirty += amount;
@@ -143,7 +143,7 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
   // Take a loan
   const handleBorrow = (amount: number, isDirty: boolean) => {
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
-    const player = next.players[next.current_player_id];
+    const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
 
     // Interest rate scales on credit score
     const interestRate = player.credit_score > 750 ? 0.08 : player.credit_score > 650 ? 0.12 : 0.18;
@@ -187,7 +187,7 @@ export const BankTab: React.FC<BankTabProps> = ({ state, onUpdateState }) => {
   // Repay a loan
   const handleRepay = (loanId: string) => {
     const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
-    const player = next.players[next.current_player_id];
+    const player = next.players[currentPlayer.id] || next.players[next.current_player_id] || Object.values(next.players)[0];
     const loanIndex = next.loans.findIndex(l => l.id === loanId);
     if (loanIndex === -1) return;
 

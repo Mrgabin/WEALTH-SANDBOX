@@ -410,16 +410,128 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
       let totalWatts = 0;
       let totalHashrate = 0;
 
+      // Handle Datacenter failures
+      if (!farm.datacenter_failure_type) {
+        farm.datacenter_failure_type = 'NONE';
+      }
+
+      if (farm.datacenter_failure_type === 'NONE') {
+        // 0.25% chance of datacenter failure per tick
+        if (Math.random() < 0.0025) {
+          const dcFailures: ('SWITCH_FAILURE' | 'HVAC_FAILURE' | 'TRANSFORMER_BLOWN')[] = ['SWITCH_FAILURE', 'HVAC_FAILURE', 'TRANSFORMER_BLOWN'];
+          const chosenFail = dcFailures[Math.floor(Math.random() * dcFailures.length)];
+          farm.datacenter_failure_type = chosenFail;
+          if (chosenFail === 'SWITCH_FAILURE') {
+            farm.datacenter_failure_details = "Panne critique du Switch Réseau Principal. Perte totale de connectivité réseau.";
+          } else if (chosenFail === 'HVAC_FAILURE') {
+            farm.datacenter_failure_details = "Système de Climatisation Industriel (HVAC) en surchauffe. Températures critiques, consommation augmentée et dégradation accélérée.";
+          } else if (chosenFail === 'TRANSFORMER_BLOWN') {
+            farm.datacenter_failure_details = "Explosion d'un transformateur de moyenne tension de la sous-station électrique. Coupure d'alimentation totale.";
+          }
+
+          newLogs.push({
+            id: `log_dc_fail_${Date.now()}_${pid}`,
+            timestamp: nowStr,
+            type: 'MINING',
+            uid: player.id,
+            message: `🚨 ALERTE INFRASTRUCTURE (${farm.location_name}) : ${farm.datacenter_failure_details}`,
+            status: 'ALERT'
+          });
+        }
+      }
+
       farm.rigs.forEach(rig => {
         if (rig.shelved) return; // Skip shelved/set-aside hardware
+
+        // Ensure failure properties are initialized
+        if (!rig.failure_type) {
+          rig.failure_type = 'NONE';
+        }
+
+        // Random component failure check (only if rig is otherwise working and not dead)
+        if (rig.failure_type === 'NONE' && rig.wear_condition > 0.05) {
+          const failChance = rig.overclocked ? 0.006 : 0.002;
+          if (Math.random() < failChance) {
+            const compFailures: ('VRAM' | 'PROCESSOR' | 'FAN')[] = ['VRAM', 'PROCESSOR', 'FAN'];
+            const chosenComp = compFailures[Math.floor(Math.random() * compFailures.length)];
+            rig.failure_type = chosenComp;
+
+            let partCode = 'VRAM_RTX_4090';
+            const rName = rig.name || '';
+            const rType = rig.type || '';
+            if (rName.includes('5090') || rType.includes('5090')) {
+              partCode = `${chosenComp}_RTX_5090`;
+            } else if (rName.includes('4090') || rType.includes('4090')) {
+              partCode = `${chosenComp}_RTX_4090`;
+            } else if (rName.includes('3090') || rType.includes('3090')) {
+              partCode = `${chosenComp}_RTX_3090`;
+            } else if (rName.includes('4070') || rType.includes('4070')) {
+              partCode = `${chosenComp}_RTX_4070`;
+            } else if (rType.includes('ASIC') || rName.toLowerCase().includes('asic')) {
+              partCode = `${chosenComp}_ASIC`;
+            } else {
+              partCode = `${chosenComp}_RTX_4090`;
+            }
+
+            rig.required_spare_part_code = partCode;
+            if (chosenComp === 'VRAM') {
+              rig.failure_details = `Mémoire vidéo (VRAM) défectueuse sur ${rig.name}. Code pièce requis: ${partCode}`;
+            } else if (chosenComp === 'PROCESSOR') {
+              rig.failure_details = `Processeur principal (Silicon Core) instable ou grillé sur ${rig.name}. Code pièce requis: ${partCode}`;
+            } else if (chosenComp === 'FAN') {
+              rig.failure_details = `Unité de ventilation grippée. Surchauffe immédiate. Code pièce requis: ${partCode}`;
+            }
+
+            newLogs.push({
+              id: `log_rig_fail_${Date.now()}_${rig.rig_id}`,
+              timestamp: nowStr,
+              type: 'MINING',
+              uid: player.id,
+              message: `⚠️ PANNE DE COMPOSANT : ${rig.name} a subi un crash de type ${chosenComp} ! (${rig.failure_details})`,
+              status: 'WARN'
+            });
+          }
+        }
+
+        // Adjust variables depending on active failures
+        let dcHashrateMult = 1.0;
+        let dcWattsMult = 1.0;
+        let dcWearMult = 1.0;
+
+        if (farm.datacenter_failure_type === 'SWITCH_FAILURE') {
+          dcHashrateMult = 0.0;
+        } else if (farm.datacenter_failure_type === 'TRANSFORMER_BLOWN') {
+          dcHashrateMult = 0.0;
+          dcWattsMult = 0.0;
+        } else if (farm.datacenter_failure_type === 'HVAC_FAILURE') {
+          dcWattsMult = 2.0;
+          dcWearMult = 5.0;
+        }
+
+        let rigHashrateMult = 1.0;
+        let rigWattsMult = 1.0;
+        let rigWearMult = 1.0;
+
+        if (rig.failure_type === 'VRAM') {
+          rigHashrateMult = 0.0;
+          rigWattsMult = 0.1; // Idle power consumption
+        } else if (rig.failure_type === 'PROCESSOR') {
+          rigHashrateMult = 0.0;
+          rigWattsMult = 0.05; // Offline power
+        } else if (rig.failure_type === 'FAN') {
+          rigHashrateMult = 0.15; // Throttled extremely low to prevent core meltdown
+          rigWattsMult = 0.4;
+          rigWearMult = 4.0; // Accelerates wear of other remaining components
+        }
+
         if (rig.wear_condition > 0.05) {
           const ocMult = rig.overclocked ? 1.25 : 1.0;
           const coolingBoost = (farm.cooling_type === 'LIQUID' && rig.hashrate_th > 0) ? 1.08 : 1.0;
-          totalWatts += rig.watts_consumption * ocMult;
-          totalHashrate += rig.hashrate_th * rig.wear_condition * ocMult * coolingBoost;
+          totalWatts += rig.watts_consumption * ocMult * dcWattsMult * rigWattsMult;
+          totalHashrate += rig.hashrate_th * rig.wear_condition * ocMult * coolingBoost * dcHashrateMult * rigHashrateMult;
           
           // Wear condition degradation
-          const degradation = (rig.overclocked ? 0.0001 : 0.00003) * (farm.cooling_type === 'LIQUID' ? 0.5 : 1.0);
+          const degradation = (rig.overclocked ? 0.0001 : 0.00003) * (farm.cooling_type === 'LIQUID' ? 0.5 : 1.0) * dcWearMult * rigWearMult;
           rig.wear_condition = Math.max(0, rig.wear_condition - degradation);
         }
       });

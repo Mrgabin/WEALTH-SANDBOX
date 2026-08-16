@@ -1,15 +1,47 @@
 import React, { useState } from 'react';
 import { FullGlobalState, MiningRig } from '../types/wealth';
-import { Cpu, Zap, AlertOctagon, Wrench, Flame, ShieldAlert, CheckCircle2, Sliders, Play, X, RefreshCw } from 'lucide-react';
+import { Cpu, Zap, AlertOctagon, Wrench, Flame, ShieldAlert, CheckCircle2, Sliders, Play, X, RefreshCw, Package, Hammer } from 'lucide-react';
 
 interface MiningFarmProps {
   state: FullGlobalState;
   onUpdateState: (newState: FullGlobalState) => void;
 }
 
+interface SparePartItem {
+  code: string;
+  name: string;
+  category: 'VRAM' | 'PROCESSOR' | 'FAN';
+  price: number;
+  description: string;
+}
+
+const SPARE_PARTS_CATALOG: SparePartItem[] = [
+  { code: 'VRAM_RTX_5090', name: 'VRAM Dédiée RTX 5090 (32GB GDDR7)', category: 'VRAM', price: 450, description: 'Puces de mémoire GDDR7 Samsung haute densité, spécifiques au PCB RTX 5090.' },
+  { code: 'PROC_RTX_5090', name: 'GPU Core Dédié RTX 5090 (Silicon Chip)', category: 'PROCESSOR', price: 650, description: 'Processeur central AD102 calibré pour supporter les charges et overclocks extrêmes.' },
+  { code: 'FAN_RTX_5090', name: 'Module Triple Fan RTX 5090', category: 'FAN', price: 180, description: 'Châssis de ventilation tri-fan de rechange avec roulements lubrifiés.' },
+
+  { code: 'VRAM_RTX_4090', name: 'VRAM Dédiée RTX 4090 (24GB GDDR6X)', category: 'VRAM', price: 380, description: 'Mémoire GDDR6X Micron de haute précision.' },
+  { code: 'PROC_RTX_4090', name: 'GPU Core Dédié RTX 4090 (Silicon Chip)', category: 'PROCESSOR', price: 550, description: 'Processeur AD102 d\'origine certifiée NVIDIA.' },
+  { code: 'FAN_RTX_4090', name: 'Module Dual-Fan RTX 4090', category: 'FAN', price: 150, description: 'Double turbine fluidodynamique pour refroidissement continu.' },
+
+  { code: 'VRAM_RTX_3090', name: 'VRAM Dédiée RTX 3090 (24GB GDDR6X)', category: 'VRAM', price: 250, description: 'Puces GDDR6X haute vitesse.' },
+  { code: 'PROC_RTX_3090', name: 'GPU Core Dédié RTX 3090', category: 'PROCESSOR', price: 350, description: 'Processeur GA102 pour architectures Ampere.' },
+  { code: 'FAN_RTX_3090', name: 'Module Fan Standard RTX 3090', category: 'FAN', price: 100, description: 'Turbine silencieuse pour refroidissement standard.' },
+
+  { code: 'VRAM_RTX_4070', name: 'VRAM Dédiée RTX 4070 (12GB GDDR6X)', category: 'VRAM', price: 150, description: 'Modules mémoire GDDR6X de précision.' },
+  { code: 'PROC_RTX_4070', name: 'GPU Core Dédié RTX 4070', category: 'PROCESSOR', price: 220, description: 'Processeur AD104 optimisé.' },
+  { code: 'FAN_RTX_4070', name: 'Module Fan Dual RTX 4070', category: 'FAN', price: 80, description: 'Double hélice plastique standard.' },
+
+  { code: 'VRAM_ASIC', name: 'Puce Mémoire Industrielle ASIC', category: 'VRAM', price: 300, description: 'Mémoire ultra-endurante pour modules de hachage ASIC.' },
+  { code: 'PROC_ASIC', name: 'Processeur BM1398 Antminer S19 XP', category: 'PROCESSOR', price: 800, description: 'Cerveau de calcul haute performance pour mineurs industriels ASIC Bitmain.' },
+  { code: 'FAN_ASIC', name: 'Ventilateur Industriel 120mm ASIC', category: 'FAN', price: 200, description: 'Ventilation à haute pression statique soufflant à plus de 6000 RPM.' }
+];
+
 export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) => {
   const currentPlayer = state.players[state.current_player_id] || Object.values(state.players)[0];
   const farm = state.mining_farms[currentPlayer.id];
+
+  const [activeSection, setActiveSection] = useState<'rigs' | 'shop'>('rigs');
 
   // Overclock mini-game state
   const [selectedRigOC, setSelectedRigOC] = useState<MiningRig | null>(null);
@@ -363,11 +395,115 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `RÉPARATION: ${rig.name} restauré à 100% d'efficience pour $${repairCost}`,
+      message: `RÉPARATION: ${rig.name} restauré à 100% d'efficience pour ${repairCost}`,
       status: 'OK'
     });
 
     onUpdateState(next);
+  };
+
+  const handleBuySparePart = (part: SparePartItem) => {
+    if (currentPlayer.bank_clean < part.price) {
+      alert(`Solde bancaire propre insuffisant ! Il vous faut ${part.price.toLocaleString()}`);
+      return;
+    }
+
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[currentPlayer.id];
+    if (player) {
+      player.bank_clean -= part.price;
+      if (!player.possessions) {
+        player.possessions = [];
+      }
+      player.possessions.push(`spare_part:${part.code}`);
+
+      next.logs.unshift({
+        id: `log_buy_part_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'MINING',
+        uid: player.id,
+        message: `ATELIER : ${player.name} a acheté la pièce détachée '${part.name}' pour ${part.price.toLocaleString()}`,
+        status: 'OK'
+      });
+
+      onUpdateState(next);
+      alert(`Achat réussi ! La pièce '${part.name}' est disponible dans votre établi.`);
+    }
+  };
+
+  const handleReplaceComponent = (rigId: string) => {
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[currentPlayer.id];
+    const currentFarm = next.mining_farms[currentPlayer.id];
+    if (!currentFarm) return;
+
+    const rig = currentFarm.rigs.find(r => r.rig_id === rigId);
+    if (!rig) return;
+
+    const requiredPart = rig.required_spare_part_code;
+    if (!requiredPart) return;
+
+    const partIndex = player.possessions?.indexOf(`spare_part:${requiredPart}`);
+    if (partIndex === undefined || partIndex === -1) {
+      alert(`Vous ne possédez pas la pièce requise (${requiredPart}) ! Veuillez l'acheter dans la boutique d'Atelier.`);
+      return;
+    }
+
+    // Consume spare part and repair rig
+    player.possessions!.splice(partIndex, 1);
+    rig.failure_type = 'NONE';
+    rig.failure_details = undefined;
+    rig.required_spare_part_code = undefined;
+    rig.wear_condition = 1.0; // Restored to 100%
+
+    next.logs.unshift({
+      id: `log_replace_comp_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: 'MINING',
+      uid: player.id,
+      message: `REMPLACEMENT COMPOSANT : ${player.name} a remplacé la pièce défectueuse sur '${rig.name}' (remise à neuf 100%).`,
+      status: 'OK'
+    });
+
+    onUpdateState(next);
+    alert(`Le composant défectueux de '${rig.name}' a été remplacé ! Le matériel est à nouveau à 100% d'efficience.`);
+  };
+
+  const handleRepairDatacenter = () => {
+    if (!farm || !farm.datacenter_failure_type || farm.datacenter_failure_type === 'NONE') return;
+
+    let cost = 0;
+    if (farm.datacenter_failure_type === 'SWITCH_FAILURE') cost = 8000;
+    else if (farm.datacenter_failure_type === 'HVAC_FAILURE') cost = 14000;
+    else if (farm.datacenter_failure_type === 'TRANSFORMER_BLOWN') cost = 25000;
+
+    if (currentPlayer.bank_clean < cost) {
+      alert(`Solde bancaire propre insuffisant ! Il vous faut ${cost.toLocaleString()} pour remplacer ce matériel.`);
+      return;
+    }
+
+    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+    const player = next.players[currentPlayer.id];
+    const nextFarm = next.mining_farms[currentPlayer.id];
+
+    if (player && nextFarm) {
+      player.bank_clean -= cost;
+      const oldFailType = nextFarm.datacenter_failure_type;
+      nextFarm.datacenter_failure_type = 'NONE';
+      nextFarm.datacenter_failure_details = undefined;
+
+      next.logs.unshift({
+        id: `log_repair_dc_${Date.now()}`,
+        timestamp: new Date().toLocaleTimeString(),
+        type: 'MINING',
+        uid: player.id,
+        message: `RÉPARATION TECHNIQUE : ${player.name} a remplacé le matériel défectueux (${oldFailType}) pour ${cost.toLocaleString()}.`,
+        status: 'OK'
+      });
+
+      onUpdateState(next);
+      alert(`Maintenance complétée ! Les systèmes de votre datacenter sont de nouveau entièrement opérationnels.`);
+    }
   };
 
   if (!farm || !farm.rigs || farm.rigs.length === 0) {
@@ -384,6 +520,19 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
 
   let totalWatts = 0;
   let totalHashrate = 0;
+
+  let dcHashrateMult = 1.0;
+  let dcWattsMult = 1.0;
+  const dcType = farm?.datacenter_failure_type ?? 'NONE';
+  if (dcType === 'SWITCH_FAILURE') {
+    dcHashrateMult = 0.0;
+  } else if (dcType === 'TRANSFORMER_BLOWN') {
+    dcHashrateMult = 0.0;
+    dcWattsMult = 0.0;
+  } else if (dcType === 'HVAC_FAILURE') {
+    dcWattsMult = 2.0;
+  }
+
   farm.rigs.forEach(r => {
     if (r.wear_condition > 0.05) {
       const oc = r.overclocked ? 1.25 : 1.0;
@@ -402,8 +551,22 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
         coolingBoost = 1.08;
       }
 
-      totalWatts += r.watts_consumption * oc;
-      totalHashrate += r.hashrate_th * r.wear_condition * oc * coolingBoost;
+      let rigHashrateMult = 1.0;
+      let rigWattsMult = 1.0;
+      const rFail = r.failure_type ?? 'NONE';
+      if (rFail === 'VRAM') {
+        rigHashrateMult = 0.0;
+        rigWattsMult = 0.1;
+      } else if (rFail === 'PROCESSOR') {
+        rigHashrateMult = 0.0;
+        rigWattsMult = 0.05;
+      } else if (rFail === 'FAN') {
+        rigHashrateMult = 0.15;
+        rigWattsMult = 0.5;
+      }
+
+      totalWatts += r.watts_consumption * oc * dcWattsMult * rigWattsMult;
+      totalHashrate += r.hashrate_th * r.wear_condition * oc * coolingBoost * dcHashrateMult * rigHashrateMult;
     }
   });
 
@@ -476,147 +639,344 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
         </div>
       </div>
 
-      {/* Rigs Hardware Inventory */}
-      <div className="space-y-4">
-        <h3 className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold">
-          Matériels & Rigs Installés ({farm.rigs.length})
-        </h3>
+      {/* active datacenter failure warning */}
+      {farm.datacenter_failure_type && farm.datacenter_failure_type !== 'NONE' && (
+        <div className="bg-red-950/20 border border-red-500/40 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-red-400 mt-1 shrink-0 animate-pulse" />
+            <div>
+              <h4 className="font-bold text-red-300 text-sm uppercase">🚨 Panne d'Infrastructure Critique !</h4>
+              <p className="text-xs text-gray-300 mt-0.5 font-sans">{farm.datacenter_failure_details}</p>
+              <span className="text-[10px] font-mono text-red-400 bg-red-950 px-2 py-0.5 rounded border border-red-900/30 font-bold mt-1.5 inline-block">
+                IMPACT SUR LA FERME : {
+                  farm.datacenter_failure_type === 'SWITCH_FAILURE' ? 'PRODUCTION DE HACHAGE COUPÉE (0 TH/s)' :
+                  farm.datacenter_failure_type === 'TRANSFORMER_BLOWN' ? 'COUPURE ÉLECTRIQUE TOTALE (0 TH/s & 0 WATTS)' :
+                  'SURCHAUFFE HVAC EXTRÊME (Usure accélérée x5 & Consommation doublée)'
+                }
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={handleRepairDatacenter}
+            className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-black font-extrabold font-mono text-xs uppercase tracking-wider transition cursor-pointer shrink-0"
+          >
+            Remplacer le matériel ({
+              farm.datacenter_failure_type === 'SWITCH_FAILURE' ? '$8,000 propres' :
+              farm.datacenter_failure_type === 'TRANSFORMER_BLOWN' ? '$25,000 propres' :
+              '$14,000 propres'
+            })
+          </button>
+        </div>
+      )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {farm.rigs.map(rig => {
-            const wearPercent = Math.round(rig.wear_condition * 100);
-            const repairCost = Math.round((1 - rig.wear_condition) * 2000);
+      {/* Tabs Sub-navigation */}
+      <div className="flex border-b border-white/10 gap-2">
+        <button
+          onClick={() => setActiveSection('rigs')}
+          className={`flex items-center gap-2 px-5 py-3 text-xs font-mono font-bold tracking-wider uppercase border-b-2 transition cursor-pointer ${
+            activeSection === 'rigs' 
+              ? 'border-cyan-400 text-cyan-300 bg-cyan-950/5' 
+              : 'border-transparent text-gray-400 hover:text-white'
+          }`}
+        >
+          <Cpu className="w-4 h-4 text-cyan-400" />
+          Rigs & Matériel ({farm.rigs.length})
+        </button>
 
-            return (
-              <div key={rig.rig_id} className={`bg-[#0F0F16] border rounded-xl p-4 space-y-4 shadow-xl hover:border-cyan-500/30 transition ${
-                rig.type === 'WATERCOOLING' ? 'border-cyan-500/20 shadow-cyan-950/10' : 'border-white/5'
-              }`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">{rig.type}</span>
-                    <h4 className="text-sm font-bold text-white mt-0.5">{rig.name}</h4>
+        <button
+          onClick={() => setActiveSection('shop')}
+          className={`flex items-center gap-2 px-5 py-3 text-xs font-mono font-bold tracking-wider uppercase border-b-2 transition cursor-pointer ${
+            activeSection === 'shop' 
+              ? 'border-purple-500 text-purple-400 bg-purple-950/5' 
+              : 'border-transparent text-gray-400 hover:text-white'
+          }`}
+        >
+          <Package className="w-4 h-4 text-purple-400" />
+          Atelier & Établi de Pièces
+        </button>
+      </div>
+
+      {activeSection === 'rigs' && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold">
+            Matériels & Rigs Installés ({farm.rigs.length})
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {farm.rigs.map(rig => {
+              const wearPercent = Math.round(rig.wear_condition * 100);
+              const repairCost = Math.round((1 - rig.wear_condition) * 2000);
+              const isRigBroken = rig.failure_type && rig.failure_type !== 'NONE';
+              const hasSparePart = rig.required_spare_part_code 
+                ? currentPlayer.possessions?.includes(`spare_part:${rig.required_spare_part_code}`) 
+                : false;
+
+              return (
+                <div key={rig.rig_id} className={`bg-[#0F0F16] border rounded-xl p-4 space-y-4 shadow-xl hover:border-cyan-500/30 transition ${
+                  rig.type === 'WATERCOOLING' ? 'border-cyan-500/20 shadow-cyan-950/10' : 'border-white/5'
+                }`}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">{rig.type}</span>
+                      <h4 className="text-sm font-bold text-white mt-0.5">{rig.name}</h4>
+                    </div>
+                    {rig.type === 'WATERCOOLING' ? (
+                      <span className="flex items-center gap-1 text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded font-bold animate-pulse">
+                        LIQUID ACTIVE
+                      </span>
+                    ) : rig.overclocked && (
+                      <span className="flex items-center gap-1 text-[10px] font-mono bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded font-bold animate-pulse">
+                        <Flame className="w-3 h-3" /> OC +25%
+                      </span>
+                    )}
                   </div>
-                  {rig.type === 'WATERCOOLING' ? (
-                    <span className="flex items-center gap-1 text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded font-bold animate-pulse">
-                      LIQUID ACTIVE
-                    </span>
-                  ) : rig.overclocked && (
-                    <span className="flex items-center gap-1 text-[10px] font-mono bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded font-bold animate-pulse">
-                      <Flame className="w-3 h-3" /> OC +25%
-                    </span>
-                  )}
-                </div>
 
-                <div className="space-y-2 font-mono text-xs">
-                  {rig.type === 'WATERCOOLING' ? (
-                    <>
-                      <div className="flex justify-between text-gray-400">
-                        <span>Refroidissement:</span>
-                        <span className="text-cyan-400 font-bold">ACTIF (LIQUID)</span>
+                  {/* Component failure block */}
+                  {isRigBroken && (
+                    <div className="bg-red-500/10 border border-red-500/30 p-2.5 rounded-lg text-red-400 font-mono text-[10px] leading-relaxed flex gap-2 animate-pulse">
+                      <AlertOctagon className="w-4.5 h-4.5 text-red-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-extrabold uppercase text-red-300">PANNE COMPOSANT: {rig.failure_type}</p>
+                        <p className="text-gray-300 mt-0.5">{rig.failure_details}</p>
                       </div>
-                      <div className="flex justify-between text-gray-400">
-                        <span>Usure globale rigs:</span>
-                        <span className="text-green-400 font-bold">DIVISÉE PAR 2</span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 font-mono text-xs">
+                    {rig.type === 'WATERCOOLING' ? (
+                      <>
+                        <div className="flex justify-between text-gray-400">
+                          <span>Refroidissement:</span>
+                          <span className="text-cyan-400 font-bold">ACTIF (LIQUID)</span>
+                        </div>
+                        <div className="flex justify-between text-gray-400">
+                          <span>Usure globale rigs:</span>
+                          <span className="text-green-400 font-bold">DIVISÉE PAR 2</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-gray-400">
+                          <span>Hashrate Efficace:</span>
+                          <span className="text-white font-bold">
+                            {(() => {
+                              let coolingBoost = 1.0;
+                              if (rig.assigned_cooler) {
+                                if (rig.assigned_cooler.includes('custom')) coolingBoost = 1.40;
+                                else if (rig.assigned_cooler.includes('elite') || rig.assigned_cooler.includes('ryujin') || rig.assigned_cooler.includes('tryx')) coolingBoost = 1.25;
+                                else coolingBoost = 1.15;
+                              } else if (farm.cooling_type === 'LIQUID') {
+                                coolingBoost = 1.08;
+                              }
+                              
+                              let rigHashrateMult = 1.0;
+                              if (rig.failure_type === 'VRAM') rigHashrateMult = 0.0;
+                              else if (rig.failure_type === 'PROCESSOR') rigHashrateMult = 0.0;
+                              else if (rig.failure_type === 'FAN') rigHashrateMult = 0.15;
+
+                              return Math.round(rig.hashrate_th * rig.wear_condition * (rig.overclocked ? 1.25 : 1) * coolingBoost * dcHashrateMult * rigHashrateMult).toLocaleString();
+                            })()} TH/s
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-400">
+                          <span>Watercooling:</span>
+                          {rig.assigned_cooler ? (
+                            <button
+                              onClick={() => setSelectedRigCooling(rig)}
+                              className="text-cyan-400 font-bold hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
+                            >
+                              💧 {getCoolerName(rig.assigned_cooler).split(' 240')[0].split(' 280')[0].split(' 360')[0]}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedRigCooling(rig)}
+                              className="text-gray-500 hover:text-cyan-400 transition cursor-pointer flex items-center gap-1 text-[11px] underline decoration-dotted"
+                            >
+                              ➕ Installer Watercooling
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    <div className="flex justify-between text-gray-400">
+                      <span>Conso Watt:</span>
+                      <span className="text-amber-300 font-bold">
+                        {Math.round(rig.watts_consumption * (rig.overclocked ? 1.25 : 1) * (rig.failure_type === 'VRAM' ? 0.1 : rig.failure_type === 'PROCESSOR' ? 0.05 : rig.failure_type === 'FAN' ? 0.5 : 1.0))} W
+                      </span>
+                    </div>
+
+                    {/* Wear Condition Bar */}
+                    <div className="space-y-1 pt-1">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-gray-400">Condition Hardware:</span>
+                        <span className={wearPercent > 50 ? 'text-green-400' : 'text-red-400'}>{wearPercent}%</span>
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-gray-400">
-                        <span>Hashrate Efficace:</span>
-                        <span className="text-white font-bold">
-                          {(() => {
-                            let coolingBoost = 1.0;
-                            if (rig.assigned_cooler) {
-                              if (rig.assigned_cooler.includes('custom')) coolingBoost = 1.40;
-                              else if (rig.assigned_cooler.includes('elite') || rig.assigned_cooler.includes('ryujin') || rig.assigned_cooler.includes('tryx')) coolingBoost = 1.25;
-                              else coolingBoost = 1.15;
-                            } else if (farm.cooling_type === 'LIQUID') {
-                              coolingBoost = 1.08;
-                            }
-                            return Math.round(rig.hashrate_th * rig.wear_condition * (rig.overclocked ? 1.25 : 1) * coolingBoost).toLocaleString();
-                          })()} TH/s
-                        </span>
+                      <div className="h-1.5 w-full bg-[#08080C] rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${wearPercent > 50 ? 'bg-green-400 shadow-[0_0_8px_#22c55e]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}
+                          style={{ width: `${wearPercent}%` }}
+                        />
                       </div>
-                      <div className="flex justify-between items-center text-gray-400">
-                        <span>Watercooling:</span>
-                        {rig.assigned_cooler ? (
-                          <button
-                            onClick={() => setSelectedRigCooling(rig)}
-                            className="text-cyan-400 font-bold hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
-                          >
-                            💧 {getCoolerName(rig.assigned_cooler).split(' 240')[0].split(' 280')[0].split(' 360')[0]}
-                          </button>
+                    </div>
+                  </div>
+
+                  {/* Controls: Overclock tuner & Repair/Replacement button */}
+                  <div className="pt-3 border-t border-white/5 flex flex-col gap-2 font-mono text-xs">
+                    {isRigBroken ? (
+                      <button
+                        onClick={() => handleReplaceComponent(rig.rig_id)}
+                        className={`w-full py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          hasSparePart 
+                            ? 'bg-purple-600/20 hover:bg-purple-600/30 border-purple-500/40 text-purple-300' 
+                            : 'bg-white/5 border-white/15 text-gray-500 cursor-not-allowed'
+                        }`}
+                        title={hasSparePart ? "Installer la pièce de rechange disponible pour remettre le rig à neuf" : `Pièce manquante : ${rig.required_spare_part_code}`}
+                      >
+                        <Hammer className="w-4 h-4" />
+                        {hasSparePart ? `Installer : ${rig.required_spare_part_code}` : `Pièce manquante : ${rig.required_spare_part_code}`}
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        {rig.type === 'WATERCOOLING' ? (
+                          <div className="flex items-center gap-1.5 text-[11px] text-cyan-300 font-bold">
+                            <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                            Refroidissement Connecté
+                          </div>
                         ) : (
                           <button
-                            onClick={() => setSelectedRigCooling(rig)}
-                            className="text-gray-500 hover:text-cyan-400 transition cursor-pointer flex items-center gap-1 text-[11px] underline decoration-dotted"
+                            onClick={() => {
+                              setSelectedRigOC(rig);
+                              setVoltage(1.0);
+                              setFrequency(2000);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ${
+                              rig.overclocked
+                                ? 'bg-red-500/20 border-red-500/40 text-red-300'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+                            }`}
                           >
-                            ➕ Installer Watercooling
+                            <Sliders className="w-3.5 h-3.5" />
+                            {rig.overclocked ? 'Réajuster OC' : 'Overclocker'}
+                          </button>
+                        )}
+
+                        {wearPercent < 95 && (
+                          <button
+                            onClick={() => handleRepairRig(rig.rig_id)}
+                            className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                          >
+                            <Wrench className="w-3.5 h-3.5" />
+                            Réparer (${repairCost})
                           </button>
                         )}
                       </div>
-                    </>
-                  )}
-                  <div className="flex justify-between text-gray-400">
-                    <span>Conso Watt:</span>
-                    <span className="text-amber-300 font-bold">{Math.round(rig.watts_consumption * (rig.overclocked ? 1.25 : 1))} W</span>
-                  </div>
-
-                  {/* Wear Condition Bar */}
-                  <div className="space-y-1 pt-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-gray-400">Condition Hardware:</span>
-                      <span className={wearPercent > 50 ? 'text-green-400' : 'text-red-400'}>{wearPercent}%</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-[#08080C] rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${wearPercent > 50 ? 'bg-green-400 shadow-[0_0_8px_#22c55e]' : 'bg-red-500 shadow-[0_0_8px_#ef4444]'}`}
-                        style={{ width: `${wearPercent}%` }}
-                      />
-                    </div>
+                    )}
                   </div>
                 </div>
-
-                {/* Controls: Overclock tuner & Repair button */}
-                <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2 font-mono text-xs">
-                  {rig.type === 'WATERCOOLING' ? (
-                    <div className="flex items-center gap-1.5 text-[11px] text-cyan-300 font-bold">
-                      <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                      Refroidissement Connecté
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setSelectedRigOC(rig);
-                        setVoltage(1.0);
-                        setFrequency(2000);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1.5 text-[11px] font-bold ${
-                        rig.overclocked
-                          ? 'bg-red-500/20 border-red-500/40 text-red-300'
-                          : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      <Sliders className="w-3.5 h-3.5" />
-                      {rig.overclocked ? 'Réajuster OC' : 'Overclocker'}
-                    </button>
-                  )}
-
-                  {wearPercent < 95 && (
-                    <button
-                      onClick={() => handleRepairRig(rig.rig_id)}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
-                    >
-                      <Wrench className="w-3.5 h-3.5" />
-                      Réparer (${repairCost})
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {activeSection === 'shop' && (
+        <div className="space-y-6">
+          {/* Workbench Section */}
+          <div className="bg-[#0F0F16] border border-purple-500/20 p-5 rounded-xl space-y-4 shadow-xl">
+            <h3 className="text-sm font-mono font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+              <Hammer className="w-5 h-5 text-purple-400 animate-pulse" />
+              Établi de Maintenance & Pièces Détenues
+            </h3>
+            <p className="text-xs text-gray-400 leading-relaxed font-sans">
+              Voici les composants de rechange haute performance que vous avez achetés. Conservez-les ici pour pouvoir réparer immédiatement vos rigs en cas d'alerte de panne.
+            </p>
+
+            {(() => {
+              const sparePartsOwned = currentPlayer.possessions?.filter(p => p.startsWith('spare_part:')) || [];
+              if (sparePartsOwned.length === 0) {
+                return (
+                  <div className="text-center py-6 bg-[#08080C] border border-dashed border-white/5 rounded-lg text-xs text-gray-500 font-mono">
+                    Aucune pièce détachée dans votre établi. Achetez des pièces de rechange ci-dessous.
+                  </div>
+                );
+              }
+
+              const counts: Record<string, number> = {};
+              sparePartsOwned.forEach(p => {
+                const code = p.replace('spare_part:', '');
+                counts[code] = (counts[code] || 0) + 1;
+              });
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {Object.entries(counts).map(([code, count]) => {
+                    const info = SPARE_PARTS_CATALOG.find(p => p.code === code);
+                    return (
+                      <div key={code} className="bg-[#08080C] border border-purple-500/10 p-3 rounded-lg flex items-center justify-between font-mono text-xs">
+                        <div>
+                          <p className="text-white font-bold text-xs">{info?.name || code}</p>
+                          <p className="text-gray-500 text-[10px] uppercase mt-0.5">Code: {code}</p>
+                        </div>
+                        <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-300 font-extrabold border border-purple-500/30">
+                          x{count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Catalog Section */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold">
+              Catalogue de Pièces Détachées d'Atelier
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {SPARE_PARTS_CATALOG.map(part => {
+                const copiesOwned = currentPlayer.possessions?.filter(p => p === `spare_part:${part.code}`).length || 0;
+                return (
+                  <div key={part.code} className="bg-[#0F0F16] border border-white/5 rounded-xl p-4 flex flex-col justify-between gap-4 shadow-xl hover:border-purple-500/20 transition">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start gap-2">
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                          part.category === 'VRAM' ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' :
+                          part.category === 'PROCESSOR' ? 'bg-red-500/10 text-red-300 border-red-500/20' :
+                          'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                        }`}>
+                          {part.category}
+                        </span>
+                        {copiesOwned > 0 && (
+                          <span className="text-[9px] px-2 py-0.5 rounded font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            En Stock: {copiesOwned}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-bold text-white font-mono">{part.name}</h4>
+                      <p className="text-xs text-gray-400 leading-relaxed font-sans min-h-[40px]">{part.description}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between font-mono text-xs">
+                      <div>
+                        <p className="text-gray-500 text-[10px] uppercase">Tarif Unitaire</p>
+                        <p className="text-base font-extrabold text-green-400">${part.price.toLocaleString()}</p>
+                      </div>
+                      <button
+                        onClick={() => handleBuySparePart(part)}
+                        className="px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-black font-extrabold text-[11px] uppercase tracking-wider transition cursor-pointer"
+                      >
+                        Acheter
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OVERCLOCKING TUNER INTERACTIVE MODAL */}
       {selectedRigOC && (
