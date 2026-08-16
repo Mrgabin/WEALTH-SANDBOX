@@ -12,11 +12,12 @@ import {
   BookOpen,
   Wallet,
   Landmark,
-  Briefcase
+  Briefcase,
+  Tag
 } from 'lucide-react';
 import { PlayerProfile } from '../types/wealth';
 
-export type ActiveTab = 'dashboard' | 'guide' | 'shops' | 'bank' | 'realestate' | 'mining' | 'laundering' | 'casino' | 'stocks' | 'charges' | 'investments';
+export type ActiveTab = 'dashboard' | 'guide' | 'shops' | 'bank' | 'realestate' | 'mining' | 'laundering' | 'casino' | 'stocks' | 'charges' | 'investments' | 'sales';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -33,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, playe
     { id: 'bank', label: 'Banque & Crédit', icon: <Landmark className="w-4 h-4 text-emerald-400" /> },
     { id: 'realestate', label: 'Immobilier & Parcs', icon: <Building2 className="w-4 h-4" /> },
     { id: 'investments', label: 'Gestion de Patrimoine', icon: <Briefcase className="w-4 h-4 text-purple-400" />, badge: 'ACTIFS' },
+    { id: 'sales', label: 'Vente & Cessions', icon: <Tag className="w-4 h-4 text-amber-400" />, badge: 'VENTE' },
     { id: 'mining', label: 'Minage Crypto 24/7', icon: <Cpu className="w-4 h-4" />, badge: 'LIVE' },
     { id: 'laundering', label: 'Blanchiment & ISF', icon: <DollarSign className="w-4 h-4" /> },
     { id: 'charges', label: 'Taxes & Abonnements', icon: <Activity className="w-4 h-4 text-purple-400" />, badge: 'IMPÔTS' },

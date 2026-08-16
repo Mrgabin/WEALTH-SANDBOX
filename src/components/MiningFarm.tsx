@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FullGlobalState, MiningRig } from '../types/wealth';
+import { FullGlobalState, MiningRig, ManagedProperty } from '../types/wealth';
 import { Cpu, Zap, AlertOctagon, Wrench, Flame, ShieldAlert, CheckCircle2, Sliders, Play, X, RefreshCw, Package, Hammer } from 'lucide-react';
 
 interface MiningFarmProps {
@@ -615,6 +615,85 @@ export const MiningFarm: React.FC<MiningFarmProps> = ({ state, onUpdateState }) 
             )}
           </div>
         </div>
+
+        {(() => {
+          let pProp: ManagedProperty | undefined;
+          for (const agency of state.real_estate_agencies) {
+            pProp = agency.managed_properties.find(p => p.property_id === farm.location_id);
+            if (pProp) break;
+          }
+
+          if (pProp && pProp.electrical_failure_type && pProp.electrical_failure_type !== 'NONE') {
+            const repairCost = pProp.electrical_repair_cost || 5000;
+            return (
+              <div className="bg-red-950/20 border border-red-500/40 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
+                <div className="flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-red-400 mt-1 shrink-0 animate-pulse" />
+                  <div>
+                    <h4 className="font-bold text-red-300 text-sm uppercase">🚨 Panne Électrique Majeure !</h4>
+                    <p className="text-xs text-gray-300 mt-0.5 font-sans">{pProp.electrical_failure_details}</p>
+                    <span className="text-[10px] font-mono text-red-400 bg-red-950 px-2 py-0.5 rounded border border-red-900/30 font-bold mt-1.5 inline-block">
+                      IMPACT : LE MINAGE EST TOTALEMENT ARRÊTÉ (0 TH/s) ET LES LOYERS SONT RÉDUITS DE 80%.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = JSON.parse(JSON.stringify(state)) as FullGlobalState;
+                    const pUser = next.players[currentPlayer.id];
+                    if (pUser) {
+                      if (pUser.bank_clean < repairCost) {
+                        alert(`Solde propre insuffisant ! Il vous faut $${repairCost.toLocaleString()} pour réparer l'installation.`);
+                        return;
+                      }
+                      
+                      let mutableProp: ManagedProperty | undefined;
+                      for (const agency of next.real_estate_agencies) {
+                        mutableProp = agency.managed_properties.find(p => p.property_id === farm.location_id);
+                        if (mutableProp) break;
+                      }
+
+                      if (mutableProp) {
+                        pUser.bank_clean -= repairCost;
+                        const prevType = mutableProp.electrical_failure_type;
+                        mutableProp.electrical_failure_type = 'NONE';
+                        mutableProp.electrical_failure_details = undefined;
+                        mutableProp.electrical_repair_cost = undefined;
+                        
+                        const upgLevel = (mutableProp.upgrade_level || 1) + 1;
+                        mutableProp.upgrade_level = upgLevel;
+                        mutableProp.power_capacity_kw = Math.round(mutableProp.power_capacity_kw * 1.20);
+                        mutableProp.rent_monthly = Math.round(mutableProp.rent_monthly * 1.15);
+                        mutableProp.estimated_value = Math.round(mutableProp.estimated_value * 1.25);
+                        
+                        const pFarm = next.mining_farms[currentPlayer.id];
+                        if (pFarm && pFarm.location_id === mutableProp.property_id) {
+                          pFarm.power_capacity_watts = mutableProp.power_capacity_kw * 1000;
+                        }
+
+                        next.logs.unshift({
+                          id: `log_repair_farm_${Date.now()}`,
+                          timestamp: new Date().toLocaleTimeString(),
+                          type: 'DB_WRITE',
+                          uid: pUser.id,
+                          message: `MAINTENANCE DIRECTE : ${pUser.name} a réparé l'électricité de sa ferme de minage à '${mutableProp.name}'. Le site passe Niveau ${upgLevel}.`,
+                          status: 'OK'
+                        });
+
+                        onUpdateState(next);
+                      }
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-mono text-xs font-bold rounded-lg border border-red-500 shadow-md transition shrink-0 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Wrench className="w-4 h-4 text-white" />
+                  Réparer la Panne (-{repairCost.toLocaleString()}$)
+                </button>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Real-time Mining Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">

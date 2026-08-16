@@ -105,16 +105,27 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
 
     if (!prop) return;
 
-    // Upgrade costs 25% of current value
-    const upgradeCost = Math.round(prop.estimated_value * 0.25);
-    if (player.bank_clean < upgradeCost) {
-      showNotification(`Fonds propres insuffisants ! Requis: ${upgradeCost.toLocaleString()}$`, true);
+    // Must have an active electrical breakdown to do this!
+    if (!prop.electrical_failure_type || prop.electrical_failure_type === 'NONE') {
+      showNotification("Le réseau électrique de ce bâtiment est déjà en état nominal (pas de panne à réparer) !", true);
       return;
     }
 
-    player.bank_clean -= upgradeCost;
+    const repairCost = prop.electrical_repair_cost || Math.round(prop.estimated_value * 0.08);
+    if (player.bank_clean < repairCost) {
+      showNotification("Fonds propres insuffisants pour la réparation ! Requis: " + repairCost.toLocaleString() + "$", true);
+      return;
+    }
+
+    player.bank_clean -= repairCost;
     
-    // Upgrade effects
+    // Clear the breakdown
+    const prevType = prop.electrical_failure_type;
+    prop.electrical_failure_type = 'NONE';
+    prop.electrical_failure_details = undefined;
+    prop.electrical_repair_cost = undefined;
+    
+    // Upgrade effects: as care reward, the building levels up
     const upgLevel = (prop.upgrade_level || 1) + 1;
     prop.upgrade_level = upgLevel;
     prop.power_capacity_kw = Math.round(prop.power_capacity_kw * 1.20); // +20% power grid
@@ -128,16 +139,16 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
     }
 
     next.logs.unshift({
-      id: `log_upgrade_prop_${Date.now()}`,
+      id: `log_repair_prop_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `RENOVATION : ${player.name} a modernisé '${prop.name}' au Niveau ${upgLevel} (-${upgradeCost.toLocaleString()}$ pour +20% réseau et +25% valeur).`,
+      message: `MAINTENANCE IMMOBILIÈRE : ${player.name} a résolu la panne électrique (${prevType}) de '${prop.name}'. Grâce aux soins apportés, le local passe Niveau ${upgLevel} (+20% kW élec, +25% valeur).`,
       status: 'OK'
     });
 
     onUpdateState(next);
-    showNotification(`Rénovation réussie ! Votre local '${prop.name}' est désormais Niveau ${upgLevel}.`);
+    showNotification(`Panne résolue ! Le local '${prop.name}' passe au Niveau ${upgLevel}.`);
   };
 
   const handleListProperty = (propId: string) => {
@@ -293,7 +304,7 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `LOGISTIQUE BOUTIQUE : ${player.name} a upgradé '${shop.name}' au Niveau ${upgLevel} (-${upgradeCost.toLocaleString()}$ pour +30% stock).`,
+      message: "LOGISTIQUE BOUTIQUE : " + player.name + " a upgradé '" + shop.name + "' au Niveau " + upgLevel + " (-" + upgradeCost.toLocaleString() + "$ pour +30% stock).",
       status: 'OK'
     });
 
@@ -319,12 +330,12 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `COMMERCE : ${player.name} a mis en vente '${shop.name}' pour ${price.toLocaleString()}$.`,
+      message: "COMMERCE : " + player.name + " a mis en vente '" + shop.name + "' pour " + price.toLocaleString() + "$.",
       status: 'INFO'
     });
 
     onUpdateState(next);
-    showNotification(`Commerce '${shop.name}' répertorié pour revente à ${price.toLocaleString()}$.`);
+    showNotification("Commerce '" + shop.name + "' répertorié pour revente à " + price.toLocaleString() + "$.");
   };
 
   const handleCancelShopSale = (shopId: string) => {
@@ -342,12 +353,12 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `COMMERCE : ${player.name} a retiré de la vente '${shop.name}'.`,
+      message: "COMMERCE : " + player.name + " a retiré de la vente '" + shop.name + "'.",
       status: 'WARN'
     });
 
     onUpdateState(next);
-    showNotification(`Mise en vente annulée.`);
+    showNotification("Mise en vente annulée.");
   };
 
   const handleAcceptShopBuyout = (shopId: string) => {
@@ -373,12 +384,12 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: player.id,
-      message: `🔥 RACHAT ACCEPTÉ : ${player.name} a vendu son fonds de commerce '${shop.name}' pour ${offerPrice.toLocaleString()}$ !`,
+      message: "🔥 RACHAT ACCEPTÉ : " + player.name + " a vendu son fonds de commerce '" + shop.name + "' pour " + offerPrice.toLocaleString() + "$ !",
       status: 'OK'
     });
 
     onUpdateState(next);
-    showNotification(`Fonds de commerce cédé ! +${offerPrice.toLocaleString()}$ encaissés.`);
+    showNotification("Fonds de commerce cédé ! +" + offerPrice.toLocaleString() + "$ encaissés.");
   };
 
   const handleDeclineShopBuyout = (shopId: string) => {
@@ -391,7 +402,7 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
     shop.buyout_offer = null;
 
     onUpdateState(next);
-    showNotification(`Offre de rachat déclinée.`);
+    showNotification("Offre de rachat déclinée.");
   };
 
   // ==========================================
@@ -420,12 +431,12 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
       timestamp: new Date().toLocaleTimeString(),
       type: 'DB_WRITE',
       uid: currentPlayer.id,
-      message: `MATÉRIEL : ${currentPlayer.name} a listé '${rig.name}' pour revente d'occasion à ${price.toLocaleString()}$.`,
+      message: "MATÉRIEL : " + currentPlayer.name + " a listé '" + rig.name + "' pour revente d'occasion à " + price.toLocaleString() + "$.",
       status: 'INFO'
     });
 
     onUpdateState(next);
-    showNotification(`Matériel '${rig.name}' répertorié à ${price.toLocaleString()}$ d'occasion.`);
+    showNotification("Matériel '" + rig.name + "' répertorié à " + price.toLocaleString() + "$ d'occasion.");
   };
 
   const handleCancelRigSale = (rigId: string) => {
@@ -754,7 +765,7 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
                           <div className="bg-[#08080C] p-2 rounded border border-white/5 space-y-0.5">
                             <span className="text-gray-500 uppercase text-[8px] block">Revenus Locatifs</span>
                             <span className={`font-bold block ${isTenantActive ? 'text-green-400' : 'text-gray-500'}`}>
-                              {isTenantActive ? `+$${p.rent_monthly.toLocaleString()}` : '$0 (Sans locataire)'}
+                              {isTenantActive ? `+${p.rent_monthly.toLocaleString()}` : '$0 (Sans locataire)'}
                             </span>
                           </div>
                           <div className="bg-[#08080C] p-2 rounded border border-white/5 space-y-0.5">
@@ -762,6 +773,18 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
                             <span className="text-purple-300 font-bold block">{age} cycles</span>
                           </div>
                         </div>
+
+                        {/* Active Electrical Breakdown Warning Panel */}
+                        {p.electrical_failure_type && p.electrical_failure_type !== 'NONE' && (
+                          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-400 font-mono space-y-1 animate-pulse">
+                            <div className="font-bold flex items-center gap-1.5 text-red-300">
+                              <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+                              ⚠️ PANNE ÉLECTRIQUE ACTIVE : {p.electrical_failure_type}
+                            </div>
+                            <p className="text-gray-300 text-[11px] leading-relaxed">{p.electrical_failure_details}</p>
+                            <p className="text-[10px] text-amber-400/90 font-bold">🚨 Rigs hors-ligne (0 TH/s), loyers perçus amputés de -80% !</p>
+                          </div>
+                        )}
 
                         {/* Accept / Decline buyout offer buttons if active */}
                         {p.buyout_offer && (
@@ -790,15 +813,22 @@ export const BusinessManager: React.FC<BusinessManagerProps> = ({ state, onUpdat
 
                       {/* Upgrade & Listing controls */}
                       <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
-                        {/* Upgrade Button */}
-                        <button
-                          onClick={() => handleUpgradeProperty(p.property_id)}
-                          className="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
-                          title="Améliorer le câblage et la rénovation (+20% kW élec, +15% loyers, +25% valeur)"
-                        >
-                          <Wrench className="w-3.5 h-3.5" />
-                          Rénover le réseau élec (-{upgCost.toLocaleString()}$)
-                        </button>
+                        {/* Conditional Repair Button or Nominal Status Badge */}
+                        {p.electrical_failure_type && p.electrical_failure_type !== 'NONE' ? (
+                          <button
+                            onClick={() => handleUpgradeProperty(p.property_id)}
+                            className="px-3.5 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-mono text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 animate-pulse"
+                            title="Réparer la panne électrique pour restaurer le courant et augmenter le niveau de la propriété (+20% kW, +15% loyers, +25% valeur)"
+                          >
+                            <Wrench className="w-3.5 h-3.5 text-red-400" />
+                            Réparer la panne (-{(p.electrical_repair_cost || Math.round(p.estimated_value * 0.08)).toLocaleString()}$)
+                          </button>
+                        ) : (
+                          <div className="px-3 py-2 rounded-xl bg-green-500/10 border border-green-500/25 text-green-400 font-mono text-xs font-bold flex items-center gap-1.5 select-none" title="Le réseau électrique fonctionne de manière nominale. Aucun problème signalé.">
+                            <Check className="w-3.5 h-3.5 text-green-400" />
+                            Réseau Élec : Nominal
+                          </div>
+                        )}
 
                         {/* Listing Sales controls */}
                         <div className="flex items-center gap-1.5">

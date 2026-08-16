@@ -400,20 +400,31 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
   const btcItem = nextState.market_prices.find(m => m.symbol === 'BTCUSDT');
   const btcPrice = btcItem ? btcItem.price : 92450;
 
-  // 2. Process each player's mining farm, ISF tax, and laundering
-  Object.keys(nextState.players).forEach(pid => {
-    const player = nextState.players[pid];
-    const farm = nextState.mining_farms[pid];
+    // 2. Process each player's mining farm, ISF tax, and laundering
+    Object.keys(nextState.players).forEach(pid => {
+      const player = nextState.players[pid];
+      const farm = nextState.mining_farms[pid];
 
-    // --- Crypto Mining Processing ---
-    if (farm && farm.rigs && farm.rigs.length > 0) {
-      let totalWatts = 0;
-      let totalHashrate = 0;
+      // --- Crypto Mining Processing ---
+      if (farm && farm.rigs && farm.rigs.length > 0) {
+        let totalWatts = 0;
+        let totalHashrate = 0;
 
-      // Handle Datacenter failures
-      if (!farm.datacenter_failure_type) {
-        farm.datacenter_failure_type = 'NONE';
-      }
+        // Check if the property where the farm is located has an active electrical failure
+        let isPropertyElectricalFailureActive = false;
+        let propertyFailureDetails = "";
+        if (nextState.real_estate_agencies && nextState.real_estate_agencies.length > 0) {
+          const matchedProp = nextState.real_estate_agencies[0].managed_properties.find(p => p.property_id === farm.location_id);
+          if (matchedProp && matchedProp.electrical_failure_type && matchedProp.electrical_failure_type !== 'NONE') {
+            isPropertyElectricalFailureActive = true;
+            propertyFailureDetails = matchedProp.electrical_failure_details || "Panne d'électricité générale.";
+          }
+        }
+
+        // Handle Datacenter failures
+        if (!farm.datacenter_failure_type) {
+          farm.datacenter_failure_type = 'NONE';
+        }
 
       if (farm.datacenter_failure_type === 'NONE') {
         // 0.25% chance of datacenter failure per tick
@@ -535,6 +546,11 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           rig.wear_condition = Math.max(0, rig.wear_condition - degradation);
         }
       });
+
+      if (isPropertyElectricalFailureActive) {
+        totalHashrate = 0;
+        totalWatts = Math.round(totalWatts * 0.05);
+      }
 
       const baseRate = player.active_subscriptions?.includes('green_electricity') 
         ? nextState.server_config.electricity_kwh_rate * 0.75 
@@ -881,7 +897,10 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
           const owner = nextState.players[prop.owner_id];
           
           if (tenant && owner) {
-            const rent = prop.rent_monthly;
+            // If there's an active severe electrical failure, rent is reduced by 80% due to power cut!
+            const hasFailure = prop.electrical_failure_type && prop.electrical_failure_type !== 'NONE';
+            const rent = hasFailure ? Math.round(prop.rent_monthly * 0.20) : prop.rent_monthly;
+            
             tenant.bank_clean = Math.max(0, tenant.bank_clean - rent);
             owner.bank_clean += rent;
             
@@ -891,8 +910,10 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
               timestamp: nowStr,
               type: 'DB_WRITE',
               uid: tenant.id,
-              message: `LOYER IMMOBILIER : ${tenant.name} a payé un loyer de ${rent.toLocaleString()} à ${owner.name} pour '${prop.name}'`,
-              status: 'OK'
+              message: hasFailure 
+                ? `⚠️ LITIGE LOYER : ${tenant.name} refuse de payer la totalité du loyer de '${prop.name}' en raison de la panne électrique active ! Loyer réduit à ${rent.toLocaleString()}$ (80% de remise).`
+                : `LOYER IMMOBILIER : ${tenant.name} a payé un loyer de ${rent.toLocaleString()} à ${owner.name} pour '${prop.name}'`,
+              status: hasFailure ? 'WARN' : 'OK'
             });
           }
         }
@@ -911,6 +932,39 @@ export function executeGlobalServerTick(prevState: FullGlobalState): FullGlobalS
               type: 'TAX_ISF',
               uid: owner.id,
               message: `FISCALITÉ IMMOBILIÈRE : Taxe foncière mensuelle (1%) payée par ${owner.name} pour '${prop.name}' : -${propTax.toLocaleString()}`,
+              status: 'WARN'
+            });
+          }
+        }
+
+        // Trigger occasional electrical breakdown on owned properties that are currently healthy (15% chance per month)
+        if (prop.owner_id && (!prop.electrical_failure_type || prop.electrical_failure_type === 'NONE')) {
+          if (Math.random() < 0.15) {
+            const failureTypes: ('OVERLOAD' | 'WIRING_FAULT' | 'TRANSFORMER_BLOWN')[] = ['OVERLOAD', 'WIRING_FAULT', 'TRANSFORMER_BLOWN'];
+            const chosenType = failureTypes[Math.floor(Math.random() * failureTypes.length)];
+            let details = '';
+            // Repairs cost 8% of current estimated value of property
+            let cost = Math.round(prop.estimated_value * 0.08);
+            if (cost < 1200) cost = 1200;
+
+            if (chosenType === 'OVERLOAD') {
+              details = "Surcharge critique du réseau. Les fusibles principaux ont fondu sous la charge élevée des équipements.";
+            } else if (chosenType === 'WIRING_FAULT') {
+              details = "Défaut d'isolement et court-circuit dans les chemins de câbles. Risque de départ de feu, disjoncteur général bloqué.";
+            } else {
+              details = "Transformateur moyenne tension extérieur grillé en raison d'une surtension harmonique.";
+            }
+
+            prop.electrical_failure_type = chosenType;
+            prop.electrical_failure_details = details;
+            prop.electrical_repair_cost = cost;
+
+            newLogs.push({
+              id: `log_prop_fail_${Date.now()}_${prop.property_id}`,
+              timestamp: nowStr,
+              type: 'DB_WRITE',
+              uid: prop.owner_id,
+              message: `⚠️ PANNE ÉLECTRIQUE : Un incident de type '${chosenType}' a éclaté à '${prop.name}' ! Électricité coupée et rigs hors-tension ! Coût des réparations : ${cost.toLocaleString()}$.`,
               status: 'WARN'
             });
           }

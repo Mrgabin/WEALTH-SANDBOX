@@ -103,6 +103,9 @@ export interface ManagedProperty {
   listed_for_sale?: boolean;
   sale_price?: number;
   buyout_offer?: { offer_price: number; expires_tick: number; } | null;
+  electrical_failure_type?: 'NONE' | 'OVERLOAD' | 'WIRING_FAULT' | 'TRANSFORMER_BLOWN';
+  electrical_failure_details?: string;
+  electrical_repair_cost?: number;
 }
 
 export interface RealEstateAgency {

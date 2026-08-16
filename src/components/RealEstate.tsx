@@ -564,7 +564,19 @@ export const RealEstate: React.FC<RealEstateProps> = ({ state, onUpdateState }) 
                   <div className="flex items-center gap-3">
                     {getIconForType(p.type)}
                     <div>
-                      <p className="font-bold text-white">{p.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-bold text-white">{p.name}</p>
+                        {p.electrical_failure_type && p.electrical_failure_type !== 'NONE' && (
+                          <span className="text-[9px] font-mono font-bold bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded uppercase animate-pulse">
+                            ⚠️ Panne Élec ({p.electrical_failure_type})
+                          </span>
+                        )}
+                        {p.upgrade_level && p.upgrade_level > 1 && (
+                          <span className="text-[9px] font-mono font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-1.5 py-0.5 rounded uppercase">
+                            Niv. {p.upgrade_level}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-gray-400">
                         Propriétaire: {p.owner_name} | Locataire: {p.tenant_name || 'Aucun'}
                       </p>

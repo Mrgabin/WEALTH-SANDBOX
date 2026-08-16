@@ -17,6 +17,7 @@ import { GuideAndKnowledge } from './components/GuideAndKnowledge';
 import { ChargesTab } from './components/ChargesTab';
 import { AuthModal } from './components/AuthModal';
 import { BusinessManager } from './components/BusinessManager';
+import { SalesManager } from './components/SalesManager';
 import { ShieldAlert, Sparkles, TrendingDown, Megaphone, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -207,6 +208,9 @@ export default function App() {
             )}
             {activeTab === 'investments' && (
               <BusinessManager state={state} onUpdateState={handleUpdateState} />
+            )}
+            {activeTab === 'sales' && (
+              <SalesManager state={state} onUpdateState={handleUpdateState} />
             )}
           </div>
         </main>
